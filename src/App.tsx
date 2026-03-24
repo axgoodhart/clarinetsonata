@@ -135,12 +135,29 @@ export default function App() {
   const [hitpointAttenuations, setHitpointAttenuations] = useState<Record<string, number>>({});
   const [activeHitpointIdx, setActiveHitpointIdx] = useState(0);
 
+  // Lifted state for segment selection (shared between editor + waveform)
+  const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0);
+
+  // Demo state toggle
+  const [showDemo, setShowDemo] = useState(false);
+
+  // Draw mode
+  const [drawMode, setDrawMode] = useState(false);
+  const curveStoreRef = useRef<CurveStore | null>(null);
+
+  // Timeline notes
+  const [notes, setNotes] = useState<TimelineNote[]>(loadNotes);
+  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+
+  useEffect(() => { saveNotes(notes); }, [notes]);
+
+  // Hitpoint derived state (must be after `notes` declaration)
   const sortedNotes = useMemo(
     () => [...notes].sort((a, b) => a.time - b.time),
     [notes],
   );
 
-  // Clamp active hitpoint index when notes change
   useEffect(() => {
     if (sortedNotes.length === 0) {
       setActiveHitpointIdx(0);
@@ -162,23 +179,6 @@ export default function App() {
     },
     [],
   );
-
-  // Lifted state for segment selection (shared between editor + waveform)
-  const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0);
-
-  // Demo state toggle
-  const [showDemo, setShowDemo] = useState(false);
-
-  // Draw mode
-  const [drawMode, setDrawMode] = useState(false);
-  const curveStoreRef = useRef<CurveStore | null>(null);
-
-  // Timeline notes
-  const [notes, setNotes] = useState<TimelineNote[]>(loadNotes);
-  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-
-  useEffect(() => { saveNotes(notes); }, [notes]);
 
   const addNote = useCallback(() => {
     const t = playback.currentTime;
