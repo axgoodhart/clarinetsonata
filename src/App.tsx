@@ -131,6 +131,38 @@ export default function App() {
   const [genDrama, setGenDrama] = useState(0.5);
   const [genMaster, setGenMaster] = useState(1.0);
 
+  const [hitpointsEnabled, setHitpointsEnabled] = useState(false);
+  const [hitpointAttenuations, setHitpointAttenuations] = useState<Record<string, number>>({});
+  const [activeHitpointIdx, setActiveHitpointIdx] = useState(0);
+
+  const sortedNotes = useMemo(
+    () => [...notes].sort((a, b) => a.time - b.time),
+    [notes],
+  );
+
+  // Clamp active hitpoint index when notes change
+  useEffect(() => {
+    if (sortedNotes.length === 0) {
+      setActiveHitpointIdx(0);
+    } else if (activeHitpointIdx >= sortedNotes.length) {
+      setActiveHitpointIdx(sortedNotes.length - 1);
+    }
+  }, [sortedNotes.length, activeHitpointIdx]);
+
+  const activeNote = sortedNotes[activeHitpointIdx] ?? null;
+
+  const getHitpointAtten = useCallback(
+    (noteId: string) => hitpointAttenuations[noteId] ?? 1.0,
+    [hitpointAttenuations],
+  );
+
+  const setHitpointAtten = useCallback(
+    (noteId: string, value: number) => {
+      setHitpointAttenuations((prev) => ({ ...prev, [noteId]: value }));
+    },
+    [],
+  );
+
   // Lifted state for segment selection (shared between editor + waveform)
   const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0);
 
@@ -714,6 +746,70 @@ export default function App() {
             if (e.target === e.currentTarget) setShowGenModal(false);
           }}
         >
+            {/* Hitpoint panel */}
+            {sortedNotes.length > 0 && (
+              <div className="gen-hp-panel">
+                <div className="gen-hp-header">
+                  <span className="gen-hp-title">
+                    hitpoint: {activeNote
+                      ? `note #${activeHitpointIdx + 1} (${formatTime(activeNote.time)})`
+                      : "—"}
+                  </span>
+                  <div
+                    className={`gen-hp-toggle${hitpointsEnabled ? " on" : ""}`}
+                    onClick={() => setHitpointsEnabled((v) => !v)}
+                  >
+                    <div className="gen-hp-toggle-dot" />
+                  </div>
+                </div>
+
+                {activeNote && (
+                  <>
+                    <div className="gen-hp-slider-row">
+                      <span className="gen-hp-slider-label">&minus;</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.01"
+                        value={getHitpointAtten(activeNote.id)}
+                        onChange={(e) => setHitpointAtten(activeNote.id, parseFloat(e.target.value))}
+                        className="gen-slider"
+                      />
+                      <span className="gen-hp-slider-label">+</span>
+                    </div>
+                    <span className="gen-hp-note">
+                      {getHitpointAtten(activeNote.id).toFixed(2)}x
+                      {activeNote.text ? ` — ${activeNote.text.slice(0, 30)}` : ""}
+                    </span>
+                  </>
+                )}
+
+                <div className="gen-hp-nav">
+                  <button
+                    className="gen-hp-nav-btn last"
+                    onClick={() =>
+                      setActiveHitpointIdx((i) => Math.max(0, i - 1))
+                    }
+                    disabled={activeHitpointIdx === 0}
+                  >
+                    Last
+                  </button>
+                  <button
+                    className="gen-hp-nav-btn"
+                    onClick={() =>
+                      setActiveHitpointIdx((i) =>
+                        Math.min(sortedNotes.length - 1, i + 1),
+                      )
+                    }
+                    disabled={activeHitpointIdx >= sortedNotes.length - 1}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+
           <div className="gen-modal">
             <div className="gen-modal-header">
               <span>Generate from Audio</span>
