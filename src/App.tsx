@@ -337,11 +337,25 @@ export default function App() {
         effectiveRanges[k] = { min: eMin, max: eMax };
       }
 
+      // Collect forced boundaries from hitpoints
+      const forcedBoundaries = hitpointsEnabled && sortedNotes.length > 0
+        ? sortedNotes.map((n) => n.time)
+        : [];
+
+      // Build attenuation map (keyed by time for arcsToSequence)
+      const attenuationMap: Record<number, number> = {};
+      if (hitpointsEnabled) {
+        for (const n of sortedNotes) {
+          attenuationMap[n.time] = hitpointAttenuations[n.id] ?? 1.0;
+        }
+      }
+
       const { arcs } = await analyzeAudioAsync(
         playback.audioBuffer,
         genSensitivity,
+        forcedBoundaries,
       );
-      const dsl = arcsToSequence(arcs, effectiveRanges, genDrama);
+      const dsl = arcsToSequence(arcs, effectiveRanges, genDrama, attenuationMap);
 
       if (dsl) {
         undoStackRef.current.push(sequenceText);
@@ -356,7 +370,7 @@ export default function App() {
       setAnalyzing(false);
       setShowGenModal(false);
     }
-  }, [sequenceText, applySequence, genRanges, genMaster, genDrama, genSensitivity, playback.audioBuffer]);
+  }, [sequenceText, applySequence, genRanges, genMaster, genDrama, genSensitivity, hitpointsEnabled, sortedNotes, hitpointAttenuations, playback.audioBuffer]);
 
   // Helper to update a single range field
   const updateRange = useCallback(
@@ -939,6 +953,7 @@ export default function App() {
                   setGenSensitivity(0.5);
                   setGenDrama(0.5);
                   setGenMaster(1.0);
+                  setHitpointAttenuations({});
                 }}
                 className="gen-btn gen-btn-reset"
               >
