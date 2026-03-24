@@ -373,6 +373,7 @@ export function arcsToSequence(
   arcs: ArcSegment[],
   ranges: GenerateRanges = DEFAULT_RANGES,
   drama = 0.5,
+  attenuationMap: Record<number, number> = {},
 ): string {
   if (arcs.length === 0) return "";
 
@@ -409,14 +410,24 @@ export function arcsToSequence(
     return range.min + normalized * (range.max - range.min);
   }
 
+  const TOLERANCE = 0.025; // 25ms
+  function getAttenuation(startTime: number): number {
+    for (const key of Object.keys(attenuationMap)) {
+      if (Math.abs(Number(key) - startTime) <= TOLERANCE) return attenuationMap[Number(key)];
+    }
+    return 1.0;
+  }
+
   const out: string[] = [""];
 
   for (let i = 0; i < arcs.length; i++) {
     const a = arcs[i];
     const hasNext = i + 1 < arcs.length;
 
+    const atten = getAttenuation(a.startTime);
     function val(k: keyof GenerateRanges, idx: number): number {
-      return mapVal(norm[k][idx], ranges[k]);
+      const v = mapVal(norm[k][idx], ranges[k]);
+      return Math.max(PARAM_LIMITS[k].min, Math.min(PARAM_LIMITS[k].max, v * atten));
     }
     function fadeOut(k: keyof GenerateRanges, idx: number): number {
       const v = val(k, idx);
