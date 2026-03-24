@@ -293,11 +293,23 @@ export default function App() {
     setAnalyzing(true);
 
     try {
+      // Compute effective ranges (master-scaled, clamped)
+      const effectiveRanges = { ...genRanges } as GenerateRanges;
+      for (const k of Object.keys(genRanges) as (keyof GenerateRanges)[]) {
+        let eMin = genRanges[k].min * genMaster;
+        let eMax = genRanges[k].max * genMaster;
+        const lim = PARAM_LIMITS[k];
+        eMin = Math.max(lim.min, Math.min(lim.max, eMin));
+        eMax = Math.max(lim.min, Math.min(lim.max, eMax));
+        if (eMin > eMax) eMin = eMax;
+        effectiveRanges[k] = { min: eMin, max: eMax };
+      }
+
       const { arcs } = await analyzeAudioAsync(
         playback.audioBuffer,
         genSensitivity,
       );
-      const dsl = arcsToSequence(arcs, genRanges);
+      const dsl = arcsToSequence(arcs, effectiveRanges, genDrama);
 
       if (dsl) {
         undoStackRef.current.push(sequenceText);
@@ -312,7 +324,7 @@ export default function App() {
       setAnalyzing(false);
       setShowGenModal(false);
     }
-  }, [sequenceText, applySequence, genRanges, genSensitivity, playback.audioBuffer]);
+  }, [sequenceText, applySequence, genRanges, genMaster, genDrama, genSensitivity, playback.audioBuffer]);
 
   // Helper to update a single range field
   const updateRange = useCallback(
