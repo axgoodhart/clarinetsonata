@@ -62,6 +62,7 @@ const HOP = 512;
 export function analyzeAudio(
   buffer: AudioBuffer,
   sensitivity = 0.5,
+  forcedBoundaries: number[] = [],
 ): { boundaries: TextureBoundary[]; arcs: ArcSegment[] } {
   const mono = mixToMono(buffer);
   const sr = buffer.sampleRate;
@@ -71,7 +72,21 @@ export function analyzeAudio(
   const smoothed = smooth(flux, 8);
   const peaks = pickPeaks(smoothed, sensitivity, sr);
 
-  const times = [0, ...peaks.map((p) => p.time), buffer.duration];
+  // Merge auto-detected peaks with forced boundaries (forced wins within 0.5s)
+  const autoTimes = peaks.map((p) => p.time);
+  const forced = forcedBoundaries.filter((t) => t > 0 && t < buffer.duration);
+  const merged = autoTimes.filter(
+    (at) => !forced.some((ft) => Math.abs(at - ft) < 0.5),
+  );
+  const allBoundaries = [...merged, ...forced].sort((a, b) => a - b);
+  // Deduplicate within 25ms tolerance
+  const deduped: number[] = [];
+  for (const t of allBoundaries) {
+    if (deduped.length === 0 || t - deduped[deduped.length - 1] > 0.025) {
+      deduped.push(t);
+    }
+  }
+  const times = [0, ...deduped, buffer.duration];
   const arcs: ArcSegment[] = [];
   for (let i = 0; i < times.length - 1; i++) {
     const t0 = times[i];
@@ -90,6 +105,7 @@ export function analyzeAudio(
 export function analyzeAudioAsync(
   buffer: AudioBuffer,
   sensitivity = 0.5,
+  forcedBoundaries: number[] = [],
 ): Promise<{ boundaries: TextureBoundary[]; arcs: ArcSegment[] }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
@@ -114,7 +130,7 @@ export function analyzeAudioAsync(
     };
 
     worker.postMessage(
-      { channelData, sampleRate: buffer.sampleRate, duration: buffer.duration, sensitivity },
+      { channelData, sampleRate: buffer.sampleRate, duration: buffer.duration, sensitivity, forcedBoundaries },
       channelData.map((c) => c.buffer),
     );
   });

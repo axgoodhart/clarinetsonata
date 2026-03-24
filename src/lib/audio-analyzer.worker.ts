@@ -228,7 +228,7 @@ function characterizeArc(frames: Frame[], t0: number, t1: number): ArcSegment {
 // ── Worker Message Handler ─────────────────────────────────────────
 
 self.onmessage = (e: MessageEvent) => {
-  const { channelData, sampleRate, duration, sensitivity } = e.data;
+  const { channelData, sampleRate, duration, sensitivity, forcedBoundaries = [] } = e.data;
 
   // Mix to mono from raw channel arrays
   const numChannels = channelData.length;
@@ -248,7 +248,20 @@ self.onmessage = (e: MessageEvent) => {
   const smoothed = smooth(flux, 8);
   const peaks = pickPeaks(smoothed, sensitivity, sampleRate);
 
-  const times = [0, ...peaks.map((p) => p.time), duration];
+  // Merge auto-detected peaks with forced boundaries (forced wins within 0.5s)
+  const autoTimes = peaks.map((p: TextureBoundary) => p.time);
+  const forced = (forcedBoundaries as number[]).filter((t: number) => t > 0 && t < duration);
+  const merged = autoTimes.filter(
+    (at: number) => !forced.some((ft: number) => Math.abs(at - ft) < 0.5),
+  );
+  const allBoundaries = [...merged, ...forced].sort((a: number, b: number) => a - b);
+  const deduped: number[] = [];
+  for (const t of allBoundaries) {
+    if (deduped.length === 0 || t - deduped[deduped.length - 1] > 0.025) {
+      deduped.push(t);
+    }
+  }
+  const times = [0, ...deduped, duration];
   const arcs: ArcSegment[] = [];
   for (let i = 0; i < times.length - 1; i++) {
     const t0 = times[i];
