@@ -31,6 +31,8 @@ type Frame = {
 
 const FFT_SIZE = 2048;
 const HOP = 512;
+const FORCED_PROXIMITY = 0.5;
+const DEDUP_TOLERANCE = 0.025;
 
 // ── Radix-2 In-Place FFT ───────────────────────────────────────────
 
@@ -248,16 +250,16 @@ self.onmessage = (e: MessageEvent) => {
   const smoothed = smooth(flux, 8);
   const peaks = pickPeaks(smoothed, sensitivity, sampleRate);
 
-  // Merge auto-detected peaks with forced boundaries (forced wins within 0.5s)
+  // Merge auto-detected peaks with forced boundaries (forced wins within proximity)
   const autoTimes = peaks.map((p: TextureBoundary) => p.time);
   const forced = (forcedBoundaries as number[]).filter((t: number) => t > 0 && t < duration);
   const merged = autoTimes.filter(
-    (at: number) => !forced.some((ft: number) => Math.abs(at - ft) < 0.5),
+    (at: number) => !forced.some((ft: number) => Math.abs(at - ft) < FORCED_PROXIMITY),
   );
   const allBoundaries = [...merged, ...forced].sort((a: number, b: number) => a - b);
   const deduped: number[] = [];
   for (const t of allBoundaries) {
-    if (deduped.length === 0 || t - deduped[deduped.length - 1] > 0.025) {
+    if (deduped.length === 0 || t - deduped[deduped.length - 1] > DEDUP_TOLERANCE) {
       deduped.push(t);
     }
   }
@@ -266,7 +268,7 @@ self.onmessage = (e: MessageEvent) => {
   for (let i = 0; i < times.length - 1; i++) {
     const t0 = times[i];
     const t1 = times[i + 1];
-    if (t1 - t0 < 0.5) continue;
+    if (t1 - t0 < FORCED_PROXIMITY) continue;
     arcs.push(characterizeArc(frames, t0, t1));
   }
 

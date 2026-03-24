@@ -56,6 +56,8 @@ export const DEFAULT_RANGES: GenerateRanges = {
 
 const FFT_SIZE = 2048;
 const HOP = 512;
+const FORCED_PROXIMITY = 0.5;
+const DEDUP_TOLERANCE = 0.025;
 
 // ── Public API ─────────────────────────────────────────────────────
 
@@ -72,17 +74,17 @@ export function analyzeAudio(
   const smoothed = smooth(flux, 8);
   const peaks = pickPeaks(smoothed, sensitivity, sr);
 
-  // Merge auto-detected peaks with forced boundaries (forced wins within 0.5s)
+  // Merge auto-detected peaks with forced boundaries (forced wins within proximity)
   const autoTimes = peaks.map((p) => p.time);
   const forced = forcedBoundaries.filter((t) => t > 0 && t < buffer.duration);
   const merged = autoTimes.filter(
-    (at) => !forced.some((ft) => Math.abs(at - ft) < 0.5),
+    (at) => !forced.some((ft) => Math.abs(at - ft) < FORCED_PROXIMITY),
   );
   const allBoundaries = [...merged, ...forced].sort((a, b) => a - b);
-  // Deduplicate within 25ms tolerance
+  // Deduplicate within tolerance
   const deduped: number[] = [];
   for (const t of allBoundaries) {
-    if (deduped.length === 0 || t - deduped[deduped.length - 1] > 0.025) {
+    if (deduped.length === 0 || t - deduped[deduped.length - 1] > DEDUP_TOLERANCE) {
       deduped.push(t);
     }
   }
@@ -91,7 +93,7 @@ export function analyzeAudio(
   for (let i = 0; i < times.length - 1; i++) {
     const t0 = times[i];
     const t1 = times[i + 1];
-    if (t1 - t0 < 0.5) continue;
+    if (t1 - t0 < FORCED_PROXIMITY) continue;
     arcs.push(characterizeArc(frames, t0, t1));
   }
 
@@ -376,6 +378,7 @@ export function arcsToSequence(
   attenuationMap: Record<number, number> = {},
 ): string {
   if (arcs.length === 0) return "";
+  drama = Math.max(0, Math.min(1, drama));
 
   const keys = Object.keys(FEATURE_MAP) as (keyof GenerateRanges)[];
 
@@ -449,6 +452,8 @@ export function arcsToSequence(
     const op0 = val("opacity", i);
     const op1 = hasNext ? val("opacity", i + 1) : fadeOut("opacity", i);
 
+    // Palette and drift are categorical mappings driven by raw centroid/rms,
+    // so drama and attenuation are intentionally not applied here.
     const p0 = pickPalette(normCentroid[i], rawFlatness[i]);
     const p1 = hasNext ? pickPalette(normCentroid[i + 1], rawFlatness[i + 1]) : "void";
     const dr0 = pickDrift(normCentroid[i], normRms[i]);
