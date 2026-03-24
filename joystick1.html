@@ -1,0 +1,441 @@
+
+<!DOCTYPE html>
+<html lang="en" >
+
+<head>
+  <meta charset="UTF-8">
+  
+
+    <link rel="apple-touch-icon" type="image/png" href="https://cpwebassets.codepen.io/assets/favicon/apple-touch-icon-5ae1a0698dcc2402e9712f7d01ed509a57814f994c660df9f7a952f3060705ee.png" />
+
+    <meta name="apple-mobile-web-app-title" content="CodePen">
+
+    <link rel="icon" type="image/x-icon" href="https://cpwebassets.codepen.io/assets/favicon/favicon-aec34940fbc1a6e787974dcd360f2c6b63348d4b1f4e06c77743096d55480f33.ico" />
+
+    <link rel="mask-icon" type="image/x-icon" href="https://cpwebassets.codepen.io/assets/favicon/logo-pin-b4b4269c16397ad2f0f7a01bcdf513a1994f4c94b8af2f191c09eb0d601762b1.svg" color="#111" />
+
+
+
+  
+    <script src="https://cpwebassets.codepen.io/assets/common/stopExecutionOnTimeout-f07739098a39bd4e74ddd974652dac904146f33fdc1ecab356e8c809a05faccb.js"></script>
+
+
+  <title>It started with a circle</title>
+
+    <link rel="canonical" href="https://codepen.io/nathantaylor/pen/QdpOyB">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css?family=Merriweather|Open+Sans:300,400" rel="stylesheet">
+
+  <link rel="stylesheet" href="https://public.codepenassets.com/css/normalize-5.0.0.min.css">
+
+  
+  
+<style>
+html {
+  font-size: 1px;
+}
+
+* {
+  user-select: none !important;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+  filter: blur(0.4px);
+  color: #505662;
+  font-family: sans-serif;
+background:black;}
+body.grabbing, body.grabbing * {
+  cursor: none !important;
+}
+
+.back {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-50%);
+  width: 200px;
+  height: 350px;
+  background: linear-gradient(135deg, #359b75, #efeaa3);
+  z-index: -1;
+  border-radius: 40px;
+  filter:contrast(1.75);
+  box-shadow: 0 0 150px rgba(34, 1, 50, 0.2), 25px 25px 50px rgba(34, 1, 50, 0.2), inset -2px -2px 4px #38134d, inset 2px 2px 4px #f4ad93;
+}
+
+@-webkit-keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 10;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 10;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.screen {
+  position: absolute;
+  top: 20px;
+  left:15px;
+  width: 170px;
+  height: 180px;
+  border-radius: 30px;
+  background:linear-gradient(100deg,#2639739a 10.6%, #4563bc8e 31.1%, #2639738a 31.6%),  #18ee74;
+  box-shadow: inset 0vh 0vh 25px rgba(34, 1, 50, 0.62), inset 5px 5px 10px rgba(34, 1, 50, 0.2), -2px -2px 4px #908198, 2px 2px 4px #cde4dd;
+  overflow: hidden;
+}
+.screen .dot {
+  position: absolute;
+  top: calc(50% - 10px);
+  left: calc(50% - 10px);
+  width: 20px;
+  height: 20px;
+  border-radius: 100vh;
+  box-shadow: 0 0 5px #4db391, 0 0 15px #85e0c2;
+  background: #0d1815;
+  filter: blur(0.6px);
+  opacity: 0.2;
+}
+
+.joy-wrap {
+  position: absolute;
+  top: 80%;
+  left:65%;
+}
+
+.cover {
+  position: absolute;
+  top: calc(50% - 55px);
+  left: calc(50% - 55px);
+  width: 110px;
+  height: 110px;
+  border-radius: 100px;
+  background: transparent;
+  transform-origin: 50% 50% 0px;
+  box-shadow: inset -25px -25px 110px rgba(34, 1, 50, 0.4), inset 25px 25px 110px rgba(205, 254, 238, 0.4), inset 2px 2px 10px #110118, inset 2px 2px 5px #110118, -2px -2px 3px #908198, 2px 2px 3px #cde4dd;
+  overflow: hidden;
+}
+
+.base {
+  position: absolute;
+  top: calc(50% - 500px);
+  left: calc(50% - 500px);
+  width: 1000px;
+  height: 1000px;
+  background-color: #505662;
+  transform-origin: 50% 50% 0px;
+  background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4d5eXlzc3OLi4ubm5uVlZWPj4+NjY19fX2JiYl/f39ra2uRkZGZmZlpaWmXl5dvb29xcXGTk5NnZ2c8TV1mAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAAFVklEQVR4XpWWB67c2BUFb3g557T/hRo9/WUMZHlgr4Bg8Z4qQgQJlHI4A8SzFVrapvmTF9O7dmYRFZ60YiBhJRCgh1FYhiLAmdvX0CzTOpNE77ME0Zty/nWWzchDtiqrmQDeuv3powQ5ta2eN0FY0InkqDD73lT9c9lEzwUNqgFHs9VQce3TVClFCQrSTfOiYkVJQBmpbq2L6iZavPnAPcoU0dSw0SUTqz/GtrGuXfbyyBniKykOWQWGqwwMA7QiYAxi+IlPdqo+hYHnUt5ZPfnsHJyNiDtnpJyayNBkF6cWoYGAMY92U2hXHF/C1M8uP/ZtYdiuj26UdAdQQSXQErwSOMzt/XWRWAz5GuSBIkwG1H3FabJ2OsUOUhGC6tK4EMtJO0ttC6IBD3kM0ve0tJwMdSfjZo+EEISaeTr9P3wYrGjXqyC1krcKdhMpxEnt5JetoulscpyzhXN5FRpuPHvbeQaKxFAEB6EN+cYN6xD7RYGpXpNndMmZgM5Dcs3YSNFDHUo2LGfZuukSWyUYirJAdYbF3MfqEKmjM+I2EfhA94iG3L7uKrR+GdWD73ydlIB+6hgref1QTlmgmbM3/LeX5GI1Ux1RWpgxpLuZ2+I+IjzZ8wqE4nilvQdkUdfhzI5QDWy+kw5Wgg2pGpeEVeCCA7b85BO3F9DzxB3cdqvBzWcmzbyMiqhzuYqtHRVG2y4x+KOlnyqla8AoWWpuBoYRxzXrfKuILl6SfiWCbjxoZJUaCBj1CjH7GIaDbc9kqBY3W/Rgjda1iqQcOJu2WW+76pZC9QG7M00dffe9hNnseupFL53r8F7YHSwJWUKP2q+k7RdsxyOB11n0xtOvnW4irMMFNV4H0uqwS5ExsmP9AxbDTc9JwgneAT5vTiUSm1E7BSflSt3bfa1tv8Di3R8n3Af7MNWzs49hmauE2wP+ttrq+AsWpFG2awvsuOqbipWHgtuvuaAE+A1Z/7gC9hesnr+7wqCwG8c5yAg3AL1fm8T9AZtp/bbJGwl1pNrE7RuOX7PeMRUERVaPpEs+yqeoSmuOlokqw49pgomjLeh7icHNlG19yjs6XXOMedYm5xH2YxpV2tc0Ro2jJfxC50ApuxGob7lMsxfTbeUv07TyYxpeLucEH1gNd4IKH2LAg5TdVhlCafZvpskfncCfx8pOhJzd76bJWeYFnFciwcYfubRc12Ip/ppIhA1/mSZ/RxjFDrJC5xifFjJpY2Xl5zXdguFqYyTR1zSp1Y9p+tktDYYSNflcxI0iyO4TPBdlRcpeqjK/piF5bklq77VSEaA+z8qmJTFzIWiitbnzR794USKBUaT0NTEsVjZqLaFVqJoPN9ODG70IPbfBHKK+/q/AWR0tJzYHRULOa4MP+W/HfGadZUbfw177G7j/OGbIs8TahLyynl4X4RinF793Oz+BU0saXtUHrVBFT/DnA3ctNPoGbs4hRIjTok8i+algT1lTHi4SxFvONKNrgQFAq2/gFnWMXgwffgYMJpiKYkmW3tTg3ZQ9Jq+f8XN+A5eeUKHWvJWJ2sgJ1Sop+wwhqFVijqWaJhwtD8MNlSBeWNNWTa5Z5kPZw5+LbVT99wqTdx29lMUH4OIG/D86ruKEauBjvH5xy6um/Sfj7ei6UUVk4AIl3MyD4MSSTOFgSwsH/QJWaQ5as7ZcmgBZkzjjU1UrQ74ci1gWBCSGHtuV1H2mhSnO3Wp/3fEV5a+4wz//6qy8JxjZsmxxy5+4w9CDNJY09T072iKG0EnOS0arEYgXqYnXcYHwjTtUNAcMelOd4xpkoqiTYICWFq0JSiPfPDQdnt+4/wuqcXY47QILbgAAAABJRU5ErkJggg==);
+  z-index: -1;
+  pointer-events: none !important;
+}
+
+.stem {
+  position: absolute;
+  top: calc(50% - 20px);
+  left: calc(50% - 20px);
+  width: 40px;
+  height: 40px;
+  border-radius: 50px;
+  background-color: #505662;
+  background-image: url(data:image/png;base64,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);
+  pointer-events: none !important;
+  transform-origin: 50% 50% 20px;
+  box-shadow: inset -10px -10px 25px rgba(34, 1, 50, 0.3);
+  opacity: 0.6;
+}
+
+.side {
+  position: absolute;
+  top: calc(50% - 50px);
+  left: calc(50% - 50px);
+  width: 100px;
+  height: 100px;
+  border-radius: 100px;
+  background: #505662;
+  transform-origin: 50% 50% 70px;
+  box-shadow: inset 0px 0px 10px rgba(33, 3, 48, 0.3);
+  cursor: -webkit-grab;
+  cursor: grab;
+}
+
+.thumb {
+  position: absolute;
+  top: calc(50% - 50px);
+  left: calc(50% - 50px);
+  width: 100px;
+  height: 100px;
+  border-radius: 100px;
+  background-color: #505662;
+  background-image: url(data:image/png;base64,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);
+  pointer-events: none !important;
+  transform-origin: 50% 50% 80px;
+}
+.thumb .dip {
+  position: absolute;
+  top: calc(50% - 25px);
+  left: calc(50% - 25px);
+  width: 50px;
+  height: 50px;
+  border-radius: 100px;
+}
+
+.sig {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 100;
+  font-family: sans-serif;
+  color: rgba(0, 0, 0, 0.4);
+  letter-spacing: 2px;
+}
+.screen-toggle {
+ position:absolute !important;
+ width:45px;
+ height:20px;
+ border-radius:50px;
+ border:1px solid white;
+ overflow:hidden;
+ filter:invert(1);
+ display:flex !important;
+text-align:center;
+justify-content:center;
+text-justify:center;
+align-items:center;
+align-content:center;
+color:white;
+font-size:10px;
+}
+
+.screen-toggle:active {
+    transform: scaleY(.95)translateX(-.4px)scaleX(.9);;
+    filter: invert(.91)contrast(.9)saturate(2);
+    font-weight: 500;
+    letter-spacing: -.5px;
+    border-width: 2px;
+    border-color: rgba(255,255,255,1);
+    border-width: .1px;
+    border-left-width:2px;
+}
+* {
+  user-select:none;
+}
+#outward {
+  top: calc(90% - 16px);
+  left: calc(35% - 45px);
+  color:cyan;
+}
+#normal {
+  top: calc(90% - 55px);
+  left: calc(35% - 55px);
+  color:yellow;
+}
+#inward {
+  top: calc(90% - 90px);
+  left: calc(35% - 40px);
+  color:lime;
+}
+</style>
+
+  <script>
+  window.console = window.console || function(t) {};
+</script>
+
+  
+  
+</head>
+
+<body translate="no">
+  <div class="back">
+  <div class="screen">
+    <div class="dot"></div>
+  </div>
+
+  <div class="screen screen-toggle" id="normal">REG</div>
+    <div class="screen screen-toggle" id="outward">OUT</div>
+
+  <div class="screen screen-toggle" id="inward">IN</div>
+  <div class="joy-wrap">
+    <div class="cover">
+      <div class="base"></div>
+    </div>
+    <div class="stem"></div>
+    <div class="side"></div>
+    <div class="thumb">
+      <div class="dip"></div>
+    </div>
+  </div>
+</div><a class="sig" href="http://nathan.tokyo" target="_blank">NATHAN.TOKYO</a>
+  <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.0/jquery.min.js'></script>
+    <script id="rendered-js" >
+var thumb = false;
+var win = { width: $(window).width(), height: $(window).height() };
+var mouse = { x: 0, y: 0 };
+var joy = { x: 0, y: 0 };
+var dot = { x: 0, y: 0 };
+var dotVel = { x: 0.15, y: 0.2 };
+var opacityVar = 0;
+
+var hue = 220;
+var warm = hue - 60;
+var cold = hue + 60;
+
+$(window).on('resize', function () {
+  win = { width: $(window).width(), height: $(window).height() };
+});
+
+$(document).ready(function () {
+  $('.side').on('mousedown', function () {
+    $('body').addClass('grabbing');
+    thumb = true;
+   /* save the mouse position for differential during drag */
+  });
+  $(document).on('mouseup', function () {
+    $('body').removeClass('grabbing');
+    thumb = false;
+  });
+  $(document).on('mousemove', function (e) {
+
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+  });
+  requestAnimationFrame(animate);
+  drawJoystick();
+});
+
+function animate() {
+  updateJoystickPosition();
+  drawJoystick();
+  updateDotPosition();
+  drawDot();
+  requestAnimationFrame(animate);
+}
+
+function updateJoystickPosition() {
+  if (thumb) {
+    joy.x = (mouse.x / win.width - 0.5) * 4;
+    joy.y = (mouse.y / win.height - 0.5) * 4;
+    if (joy.x > 1)
+    joy.x = 1;
+    if (joy.x < -1)
+    joy.x = -1;
+    if (joy.y > 1)
+    joy.y = 1;
+    if (joy.y < -1)
+    joy.y = -1;
+
+  } else {
+    joy.x = 0;
+    joy.y = 0;
+  }
+
+}
+
+function updateDotPosition() {
+
+  dotVel.x += joy.x / 10;
+  dotVel.y += joy.y / 10;
+
+  dotVel.x *= 0.95;
+  dotVel.y *= 0.95;
+
+  dot.x += dotVel.x / 10;
+  dot.y += dotVel.y / 10;
+
+  if (dot.x > 1.1)
+  dot.x = -1.09;
+  if (dot.x < -1.1)
+  dot.x = 1.09;
+  if (dot.y > 1.1)
+  dot.y = -1.09;
+  if (dot.y < -1.1)
+  dot.y = 1.09;
+
+}
+
+function drawJoystick() {
+  var xRotate = joy.x * -40;
+  var yRotate = joy.y * 30;
+
+  //calculate angle based on mouse position
+  var transform = 'rotateY(' + xRotate + 'deg) rotateX(' + yRotate + 'deg) perspective(500px) translateZ(0px)';
+  var transformDip = 'translateX(' + xRotate * -.2 + '%) translateY(' + yRotate * 0.2 + '%)';
+  var transformBase = 'translateX(' + xRotate * -0.08 + '%) translateY(' + yRotate * 0.08 + '%)';
+
+  $('.thumb').css('transform', transform);
+  $('.dip').css('transform', transformDip);
+  $('.side').css('transform', transform);
+  $('.base').css('transform', transformBase);
+  $('.stem').css('transform', transform);
+
+  //variable for measing amount facing light
+  var muke = (joy.x + joy.y - 2) * -0.35;
+
+  var bg = 'hsl(' + (hue - muke * 30 + 15) + ',15%,' + (30 + muke * 20) + '%)';
+  var bgSide = 'linear-gradient(-45deg, hsl(' + cold + ',15%,' + (15 + muke * 25) + '%),hsl(' + warm + ',20%,' + (70 + muke * 20) + '%))';
+  $('.thumb').css('background-color', bg);
+  $('.side').css('background', bgSide);
+
+  //generate dynamic shadows
+  var light = 'inset ' + (muke * 4 + 2) + 'px ' + (muke * 4 + 2) + 'px ' + (muke * 10 + 5) + 'px hsla(' + warm + ',20%,65%,' + (0.5 + muke * 0.5) + ')';
+  var dark = 'inset ' + (muke * 6 - 4) + 'px ' + (muke * 6 - 4) + 'px ' + (15 - muke * 10) + 'px hsla(' + cold + ',30%,10%,' + (1 - muke * 0.5) + ')';
+  var lightTight = 'inset ' + 5 + 'px ' + 5 + 'px ' + 10 + 'px hsla(' + warm + ',10%,80%,' + (0.5 + muke * 0.5) + ')';
+  var darkTight = 'inset ' + 0 + 'px ' + 0 + 'px ' + 10 + 'px hsla(' + cold + ',60%,5%,' + (1 - muke * 0.5) + ')';
+  var fall = 10 + muke * 15 + 'px ' + (10 + muke * 15) + 'px ' + (15 + muke * 35) + 'px hsla(' + cold + ',45%,5%,' + (0.4 - muke * 0.1) + ')';
+  var bs = light + ',' + lightTight + ',' + dark + ', ' + darkTight + ',' + fall;
+
+  var lightDip = 'inset ' + (-2 - muke * 2) + 'px ' + (-2 - muke * 2) + 'px ' + (8 + muke * 4) + 'px hsla(' + warm + ',20%,65%,' + (0.3 + muke * 0.5) + ')';
+  var darkDip = 'inset ' + (4 - muke * 2) + 'px ' + (4 - muke * 2) + 'px ' + (12 - muke * 4) + 'px hsla(' + cold + ',30%,20%,' + (0.8 - muke * 0.5) + ')';
+  var lightDipOuter = 2 + muke * 2 + 'px ' + (2 + muke * 2) + 'px ' + (8 + muke * 4) + 'px hsla(' + warm + ',20%,65%,' + (0.3 + muke * 0.5) + ')';
+  var darkDipOuter = -4 + muke * 2 + 'px ' + (-4 + muke * 2) + 'px ' + (12 - muke * 4) + 'px hsla(' + cold + ',30%,20%,' + (0.8 - muke * 0.5) + ')';
+  var bsDip = lightDipOuter + ',' + darkDipOuter + ',' + lightDip + ',' + darkDip;
+
+  $('.thumb').css('box-shadow', bs);
+  $('.dip').css('box-shadow', bsDip);
+
+}
+
+function drawDot() {
+
+  opacityVar = Math.max(Math.min(opacityVar + Math.random() * 0.02 - 0.01, 0.2), 0);
+  var transformDot = 'translateX(' + dot.x * 100 + 'px) translateY(' + dot.y * 100 + 'px)';
+  $('.dot').css('transform', transformDot);
+  var opacityDot = 0.2 + Math.sqrt((Math.abs(dotVel.x) + Math.abs(dotVel.y)) * 2) + opacityVar;
+  $('.dot').css('opacity', opacityDot);
+
+
+}
+//# sourceURL=pen.js
+  </script>
+
+  
+</body>
+
+</html>

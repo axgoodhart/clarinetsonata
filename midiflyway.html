@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Flyway | 3D Interactive Audio Visualizer</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: 10;
+            transition: opacity 0.5s ease-out;
+        }
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 0 50px rgba(0, 255, 200, 0.1);
+        }
+        h1 {
+            margin-top: 0;
+            background: -webkit-linear-gradient(45deg, #00ffcc, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.5rem;
+        }
+        p { color: #aaa; line-height: 1.5; margin-bottom: 30px; }
+        .upload-btn {
+            background: linear-gradient(45deg, #00ffcc, #0088ff);
+            border: none;
+            padding: 15px 30px;
+            color: #000;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .upload-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0, 255, 200, 0.5);
+        }
+        input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+        #loading {
+            display: none;
+            margin-top: 20px;
+            color: #00ffcc;
+            font-weight: bold;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        #controls-info {
+            position: absolute;
+            bottom: 20px; left: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+        }
+        #biome-indicator {
+            position: absolute;
+            top: 20px; right: 20px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="ui-overlay">
+        <div class="panel">
+            <h1>MIDI Highway</h1>
+            <p>Upload any `.mid` file to generate a 3D scenic flythrough. The engine maps positional Web Audio directly to the notes in 3D space. <br><br>Drag to look around, scroll to zoom.</p>
+            <button class="upload-btn">
+                Select MIDI File
+                <input type="file" id="midi-upload" accept=".mid,.midi">
+            </button>
+            <div id="loading">Parsing Neural Musical Data...</div>
+        </div>
+    </div>
+
+    <div id="biome-indicator"></div>
+    <div id="controls-info">Free Roam Active: Left Click to Orbit | Right Click to Pan | Scroll to Zoom</div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { Midi } from 'https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/+esm';
+
+        // ============================================================
+        // SECTION 1: CONFIGURATION
+        // ============================================================
+
+        const TRACK_SPACING = 130.25;
+        const PITCH_SPACING = 10.25;
+        const BASE_SCROLL_SPEED = 110;
+        const CHORD_WINDOW = 0.05; // 50ms grouping window
+
+        // --- BIOME DEFINITIONS ---
+        const BIOMES = {
+            classical: {
+                label: 'Classical',
+                fogColor: 0x1a1410, fogDensity: 0.0025,
+                groundBase: [0.10, 0.08, 0.06],
+                groundLine: [0.83, 0.65, 0.45],
+                bloomStrength: 0.8, bloomRadius: 0.8, bloomThreshold: 0.2,
+                starCount: 20000, starSize: 0.8, starOpacity: 0.3,
+                dustMotes: true,
+                ambientIntensity: 0.35,
+                palette: { baseHue: 0.08, spread: 0.12, sat: 0.5, lit: 0.5 }
+            },
+            edm: {
+                label: 'EDM / Synthwave',
+                fogColor: 0x050508, fogDensity: 0.002,
+                groundBase: [0.04, 0.04, 0.10],
+                groundLine: [1.0, 0.0, 1.0],
+                bloomStrength: 1.5, bloomRadius: 0.5, bloomThreshold: 0.1,
+                starCount: 50100, starSize: 1.5, starOpacity: 0.6,
+                dustMotes: false,
+                ambientIntensity: 0.2,
+                palette: { baseHue: 0.83, spread: 0.5, sat: 0.95, lit: 0.55 }
+            },
+            jazz: {
+                label: 'Jazz / Lo-Fi',
+                fogColor: 0x0d0d0a, fogDensity: 0.005,
+                groundBase: [0.05, 0.05, 0.04],
+                groundLine: [1.0, 0.67, 0.27],
+                bloomStrength: 0.6, bloomRadius: 1.0, bloomThreshold: 0.3,
+                starCount: 5000, starSize: 1.0, starOpacity: 0.2,
+                dustMotes: true,
+                ambientIntensity: 0.15,
+                palette: { baseHue: 0.1, spread: 0.08, sat: 0.35, lit: 0.45 }
+            }
+        };
+
+        // --- INSTRUMENT SYNTHESIS CONFIGS ---
+        function getInstrumentConfig(trackIdx, instrumentNum) {
+            if (instrumentNum >= 0 && instrumentNum <= 7)
+                return { wave: 'triangle', a: 0.005, d: 0.3, s: 0.2, r: 0.5 };
+            if (instrumentNum >= 8 && instrumentNum <= 15)
+                return { wave: 'sine', a: 0.001, d: 0.1, s: 0.0, r: 0.2 };
+            if (instrumentNum >= 16 && instrumentNum <= 23)
+                return { wave: 'square', a: 0.01, d: 0.1, s: 0.8, r: 0.3 };
+            if (instrumentNum >= 24 && instrumentNum <= 31)
+                return { wave: 'sawtooth', a: 0.005, d: 0.2, s: 0.3, r: 0.4 };
+            if (instrumentNum >= 32 && instrumentNum <= 39)
+                return { wave: 'sawtooth', a: 0.01, d: 0.3, s: 0.5, r: 0.3 };
+            if (instrumentNum >= 40 && instrumentNum <= 51)
+                return { wave: 'sawtooth', a: 0.15, d: 0.3, s: 0.7, r: 0.8 };
+            if (instrumentNum >= 52 && instrumentNum <= 55)
+                return { wave: 'sawtooth', a: 0.08, d: 0.2, s: 0.5, r: 0.5 };
+            if (instrumentNum >= 56 && instrumentNum <= 63)
+                return { wave: 'square', a: 0.05, d: 0.2, s: 0.6, r: 0.4 };
+            if (instrumentNum >= 64 && instrumentNum <= 79)
+                return { wave: 'square', a: 0.02, d: 0.2, s: 0.5, r: 0.3 };
+            if (instrumentNum >= 80 && instrumentNum <= 87)
+                return { wave: 'sawtooth', a: 0.01, d: 0.2, s: 0.5, r: 0.3 };
+            if (instrumentNum >= 88 && instrumentNum <= 95)
+                return { wave: 'sine', a: 0.3, d: 0.5, s: 0.7, r: 1.0 };
+            if (instrumentNum >= 96 && instrumentNum <= 103)
+                return { wave: 'square', a: 0.01, d: 0.15, s: 0.3, r: 0.2 };
+            if (instrumentNum >= 104 && instrumentNum <= 111)
+                return { wave: 'triangle', a: 0.01, d: 0.2, s: 0.4, r: 0.3 };
+            if (instrumentNum >= 112 && instrumentNum <= 119)
+                return { wave: 'sine', a: 0.001, d: 0.1, s: 0.0, r: 0.15 };
+            const waves = ['sine', 'square', 'sawtooth', 'triangle'];
+            return { wave: waves[trackIdx % 4], a: 0.01, d: 0.2, s: 0.3, r: 0.3 };
+        }
+
+        // ============================================================
+        // SECTION 2: GLOBAL STATE
+        // ============================================================
+
+        let scene, camera, renderer, composer, bloomPass, controls;
+        let audioCtx, masterVolume;
+        let isPlaying = false;
+        let startTime = 0;
+        let allNotes = [];
+        let percussionNotes = [];
+        let maxZ = 0;
+        let groundMaterial;
+        let instancedNotes, percussionMesh;
+        let currentBiome = 'edm';
+        let tempoMap = [];
+        let beatEvents = [];
+        let chordAuras = [];
+        let noteDensityMap = [];
+        let trackCCData = {};
+        let trackPitchBends = {};
+        let trackInstruments = {};
+        let lyricsMarkers = [];
+        let contourLines = [];
+        let songDuration = 0;
+        let dustParticles = null;
+        let spotlights = [];
+        let beatFlashIntensity = 0;
+        let orbitingLights = [];
+
+        // ============================================================
+        // SECTION 3: UTILITY FUNCTIONS
+        // ============================================================
+
+        // --- BIOME DETECTION ---
+        function detectBiome(midi) {
+            let piano = 0, strings = 0, brass = 0, synth = 0, guitar = 0, drums = 0, organ = 0;
+            for (const track of midi.tracks) {
+                const num = track.instrument?.number ?? -1;
+                const isPerc = track.instrument?.percussion || track.channel === 9;
+                if (isPerc) { drums++; continue; }
+                if (num >= 0 && num <= 7) piano++;
+                if (num >= 16 && num <= 23) organ++;
+                if (num >= 24 && num <= 31) guitar++;
+                if (num >= 32 && num <= 39) guitar++; // bass guitar
+                if (num >= 40 && num <= 55) strings++;
+                if (num >= 56 && num <= 63) brass++;
+                if (num >= 80 && num <= 103) synth++;
+            }
+            if (synth >= 2 || (synth > 0 && drums > 0 && strings === 0 && piano === 0)) return 'edm';
+            if (strings >= 2 || (piano > 0 && strings > 0)) return 'classical';
+            if (brass > 0 || (guitar > 0 && drums > 0 && synth === 0)) return 'jazz';
+            if (piano > 0 && drums === 0 && synth === 0) return 'classical';
+            return 'edm';
+        }
+
+        // --- TEMPO MAP ---
+        function buildTempoMap(midi) {
+            tempoMap = [];
+            const tempos = midi.header.tempos;
+            if (!tempos || tempos.length === 0) {
+                tempoMap.push({ time: 0, bpm: 120, cumZ: 0 });
+                return;
+            }
+            // Tonejs Midi tempos have .bpm and .ticks; compute time from ticks
+            const ppq = midi.header.ppq || 480;
+            const events = [];
+            let cumTime = 0;
+            let lastTick = 0;
+            let lastBPM = tempos[0].bpm;
+            for (let i = 0; i < tempos.length; i++) {
+                const t = tempos[i];
+                const ticks = t.ticks ?? 0;
+                if (i > 0) {
+                    const dt = ((ticks - lastTick) / ppq) * (60 / lastBPM);
+                    cumTime += dt;
+                }
+                events.push({ time: cumTime, bpm: t.bpm, ticks });
+                lastTick = ticks;
+                lastBPM = t.bpm;
+            }
+            // Build cumulative Z
+            let cumZ = 0;
+            for (let i = 0; i < events.length; i++) {
+                if (i > 0) {
+                    const dt = events[i].time - events[i - 1].time;
+                    const speed = (events[i - 1].bpm / 120) * BASE_SCROLL_SPEED;
+                    cumZ += dt * speed;
+                }
+                events[i].cumZ = cumZ;
+            }
+            tempoMap = events;
+        }
+
+        function timeToZ(time) {
+            if (tempoMap.length === 0) return -time * BASE_SCROLL_SPEED;
+            let seg = tempoMap[0];
+            for (let i = tempoMap.length - 1; i >= 0; i--) {
+                if (time >= tempoMap[i].time) { seg = tempoMap[i]; break; }
+            }
+            const speed = (seg.bpm / 120) * BASE_SCROLL_SPEED;
+            return -(seg.cumZ + (time - seg.time) * speed);
+        }
+
+        function getSpeedAtTime(time) {
+            if (tempoMap.length === 0) return BASE_SCROLL_SPEED;
+            let seg = tempoMap[0];
+            for (let i = tempoMap.length - 1; i >= 0; i--) {
+                if (time >= tempoMap[i].time) { seg = tempoMap[i]; break; }
+            }
+            return (seg.bpm / 120) * BASE_SCROLL_SPEED;
+        }
+
+        // --- BEAT COMPUTATION ---
+        function computeBeats(midi, duration) {
+            beatEvents = [];
+            const timeSigs = midi.header.timeSignatures;
+            const beatsPerMeasure = timeSigs?.[0]?.timeSignature?.[0] ?? 4;
+            let time = 0;
+            let beatCount = 0;
+            while (time < duration + 1) {
+                const bpm = getSpeedAtTime(time) > 0 ? getBPMAtTime(time) : 120;
+                const beatDur = 60 / bpm;
+                beatEvents.push({
+                    time,
+                    z: timeToZ(time),
+                    isDownbeat: beatCount % beatsPerMeasure === 0
+                });
+                beatCount++;
+                time += beatDur;
+            }
+        }
+
+        function getBPMAtTime(time) {
+            if (tempoMap.length === 0) return 120;
+            let seg = tempoMap[0];
+            for (let i = tempoMap.length - 1; i >= 0; i--) {
+                if (time >= tempoMap[i].time) { seg = tempoMap[i]; break; }
+            }
+            return seg.bpm;
+        }
+
+        // --- CHORD DETECTION ---
+        function detectChords(notes) {
+            chordAuras = [];
+            if (notes.length === 0) return;
+            const sorted = [...notes].sort((a, b) => a.time - b.time);
+            let i = 0;
+            while (i < sorted.length) {
+                const group = [sorted[i]];
+                let j = i + 1;
+                while (j < sorted.length && sorted[j].time - sorted[i].time < CHORD_WINDOW) {
+                    group.push(sorted[j]);
+                    j++;
+                }
+                if (group.length >= 3) {
+                    const pitches = [...new Set(group.map(n => n.midi % 12))].sort((a, b) => a - b);
+                    const intervals = [];
+                    for (let k = 1; k < pitches.length; k++) {
+                        intervals.push((pitches[k] - pitches[0] + 12) % 12);
+                    }
+                    let type = 'neutral';
+                    if (intervals.includes(4) && intervals.includes(7)) type = 'major';
+                    else if (intervals.includes(3) && intervals.includes(7)) type = 'minor';
+                    else if (intervals.includes(1) || intervals.includes(2)) type = 'dissonant';
+
+                    const avgX = group.reduce((s, n) => s + n.worldX, 0) / group.length;
+                    const avgY = group.reduce((s, n) => s + n.worldY, 0) / group.length;
+                    const avgZ = group.reduce((s, n) => s + n.worldZ, 0) / group.length;
+                    chordAuras.push({
+                        time: group[0].time,
+                        type,
+                        position: new THREE.Vector3(avgX, avgY, avgZ),
+                        size: Math.min(group.length * 4, 30)
+                    });
+                }
+                i = j;
+            }
+        }
+
+        // --- NOTE DENSITY ---
+        function computeNoteDensity(notes) {
+            noteDensityMap = [];
+            if (notes.length === 0) return;
+            const maxTime = notes[notes.length - 1].time + 1;
+            for (let t = 0; t < maxTime; t += 1.0) {
+                const count = notes.filter(n => n.time >= t && n.time < t + 1.0).length;
+                noteDensityMap.push({ time: t, density: count });
+            }
+        }
+
+        function getDensityAtTime(time) {
+            if (noteDensityMap.length === 0) return 0;
+            const idx = Math.min(Math.floor(time), noteDensityMap.length - 1);
+            return noteDensityMap[Math.max(0, idx)]?.density ?? 0;
+        }
+
+        // --- CC DATA LOOKUP ---
+        function isSustainActive(trackIdx, time) {
+            const ccData = trackCCData[trackIdx]?.[64];
+            if (!ccData) return false;
+            let active = false;
+            for (const ev of ccData) {
+                if (ev.time > time) break;
+                active = ev.value >= 0.5;
+            }
+            return active;
+        }
+
+        function getAvgPitchBend(trackIdx, noteTime, noteDur) {
+            const bends = trackPitchBends[trackIdx];
+            if (!bends || bends.length === 0) return 0;
+            let sum = 0, count = 0;
+            for (const b of bends) {
+                if (b.time >= noteTime && b.time <= noteTime + noteDur) {
+                    sum += b.value;
+                    count++;
+                }
+            }
+            return count > 0 ? sum / count : 0;
+        }
+
+        function getAvgModulation(trackIdx, noteTime, noteDur) {
+            const ccData = trackCCData[trackIdx]?.[1];
+            if (!ccData) return 0;
+            let sum = 0, count = 0;
+            for (const ev of ccData) {
+                if (ev.time >= noteTime && ev.time <= noteTime + noteDur) {
+                    sum += ev.value;
+                    count++;
+                }
+            }
+            return count > 0 ? sum / count : 0;
+        }
+
+        // --- TEXT SPRITE CREATOR ---
+        function createTextSprite(text, color = '#ffffff', fontSize = 48) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+            const metrics = ctx.measureText(text);
+            canvas.width = Math.ceil(metrics.width) + 20;
+            canvas.height = fontSize + 20;
+            ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85 });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(canvas.width / 8, canvas.height / 8, 1);
+            return sprite;
+        }
+
+        // --- COLOR PALETTE ---
+        function generatePalette(biome, numTracks) {
+            const c = BIOMES[biome].palette;
+            const colors = [];
+            for (let i = 0; i < numTracks; i++) {
+                const hue = (c.baseHue + (i / Math.max(numTracks, 1)) * c.spread) % 1;
+                colors.push({ h: hue, s: c.sat, l: c.lit });
+            }
+            return colors;
+        }
+
+        // ============================================================
+        // SECTION 4: INITIALIZATION
+        // ============================================================
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050508, 0.002);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 30, 50);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            const renderScene = new RenderPass(scene, camera);
+            bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.1
+            );
+            bloomPass.threshold = 0.1;
+            bloomPass.strength = 1.2;
+            bloomPass.radius = 0.5;
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 0, 0);
+            controls.allowPan = true;
+
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('midi-upload').addEventListener('change', handleFileUpload);
+
+            createEnvironmentFallback();
+            animate();
+        }
+
+        function createEnvironmentFallback() {
+            const geo = new THREE.PlaneGeometry(1000, 1000, 50, 50);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x222222, wireframe: true });
+            const plane = new THREE.Mesh(geo, mat);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -130;
+            scene.add(plane);
+        }
+
+        // ============================================================
+        // SECTION 5: MIDI DATA EXTRACTION
+        // ============================================================
+
+        function extractMidiData(midi) {
+            trackCCData = {};
+            trackPitchBends = {};
+            trackInstruments = {};
+            lyricsMarkers = [];
+
+            midi.tracks.forEach((track, tIdx) => {
+                // Instrument info
+                trackInstruments[tIdx] = {
+                    number: track.instrument?.number ?? -1,
+                    name: track.instrument?.name ?? 'Unknown',
+                    percussion: track.instrument?.percussion || track.channel === 9
+                };
+
+                // Control Changes
+                trackCCData[tIdx] = {};
+                if (track.controlChanges) {
+                    for (const [ccNum, events] of Object.entries(track.controlChanges)) {
+                        trackCCData[tIdx][ccNum] = events.map(ev => ({
+                            time: ev.time,
+                            value: ev.value
+                        })).sort((a, b) => a.time - b.time);
+                    }
+                }
+
+                // Pitch Bends
+                if (track.pitchBends && track.pitchBends.length > 0) {
+                    trackPitchBends[tIdx] = track.pitchBends.map(pb => ({
+                        time: pb.time,
+                        value: pb.value // -1 to 1
+                    })).sort((a, b) => a.time - b.time);
+                }
+            });
+
+            // Lyrics and Markers from header
+            if (midi.header.name) {
+                lyricsMarkers.push({ time: 0, text: midi.header.name, type: 'title' });
+            }
+            // Track names as section markers
+            midi.tracks.forEach((track, tIdx) => {
+                if (track.name && track.name.trim()) {
+                    const firstNoteTime = track.notes.length > 0 ? track.notes[0].time : 0;
+                    lyricsMarkers.push({ time: firstNoteTime, text: track.name, type: 'track' });
+                }
+            });
+        }
+
+        // ============================================================
+        // SECTION 6: WORLD BUILDING
+        // ============================================================
+
+        function buildWorld(midi) {
+            // Clear scene
+            while (scene.children.length > 0) {
+                const child = scene.children[0];
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+                scene.remove(child);
+            }
+            contourLines = [];
+            chordAuras = [];
+            spotlights = [];
+            orbitingLights = [];
+            dustParticles = null;
+
+            // Detect biome and extract data
+            currentBiome = detectBiome(midi);
+            const biome = BIOMES[currentBiome];
+            extractMidiData(midi);
+            buildTempoMap(midi);
+
+            // Show biome indicator
+            const biomeEl = document.getElementById('biome-indicator');
+            biomeEl.textContent = biome.label;
+            biomeEl.style.display = 'block';
+
+            // Apply biome settings
+            scene.fog = new THREE.FogExp2(biome.fogColor, biome.fogDensity);
+            bloomPass.strength = biome.bloomStrength;
+            bloomPass.radius = biome.bloomRadius;
+            bloomPass.threshold = biome.bloomThreshold;
+
+            const numTracks = midi.tracks.length;
+            const palette = generatePalette(currentBiome, numTracks);
+
+            // Separate melodic vs percussion notes
+            let totalMelodicNotes = 0;
+            let totalPercNotes = 0;
+            midi.tracks.forEach((track, tIdx) => {
+                const isPerc = trackInstruments[tIdx]?.percussion;
+                track.notes.forEach(note => {
+                    if (note.midi == null || note.duration == null || note.time == null || note.velocity == null) return;
+                    if (isPerc) totalPercNotes++;
+                    else totalMelodicNotes++;
+                });
+            });
+
+            // ----------------------------------------------------------
+            // MELODIC NOTES (Instanced Boxes)
+            // Pitch -> Y axis, Velocity -> brightness/thickness
+            // ----------------------------------------------------------
+            const noteGeo = new THREE.BoxGeometry(1, 1, 1);
+            const noteMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.3,
+                metalness: 1,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            // Per-instance custom attributes
+            const pitchBendAttr = new Float32Array(totalMelodicNotes);
+            const modulationAttr = new Float32Array(totalMelodicNotes);
+            const dissonanceAttr = new Float32Array(totalMelodicNotes);
+
+            // Shader: glow at playhead + pitch bend curve + modulation wobble + dissonance vibration
+            noteMat.onBeforeCompile = (shader) => {
+                shader.uniforms.uPlayheadZ = { value: 0 };
+                shader.uniforms.uTime = { value: 0 };
+                shader.vertexShader = `
+                    attribute float aPitchBend;
+                    attribute float aModulation;
+                    attribute float aDissonance;
+                    uniform float uTime;
+                    varying vec3 vWorldPos;
+                    varying float vFlash;
+                    ${shader.vertexShader.replace(
+                        `#include <worldpos_vertex>`,
+                        `#include <worldpos_vertex>
+                        vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                        // Pitch bend: curve Y position
+                        wp.y += aPitchBend * 15.0 * sin(position.z * 3.14159);
+                        // Modulation: wobble
+                        wp.x += aModulation * 3.0 * sin(uTime * 12.0 + position.z * 5.0);
+                        wp.y += aModulation * 2.0 * cos(uTime * 10.0 + position.x * 4.0);
+                        // Dissonance: jagged vibration
+                        wp.x += aDissonance * 2.5 * sin(uTime * 25.0 + wp.z * 0.5);
+                        wp.y += aDissonance * 2.0 * cos(uTime * 30.0 + wp.x * 0.3);
+                        vWorldPos = wp.xyz;
+                        `
+                    )}
+                `;
+                shader.fragmentShader = `
+                    uniform float uPlayheadZ;
+                    varying vec3 vWorldPos;
+                    ${shader.fragmentShader.replace(
+                        `#include <emissivemap_fragment>`,
+                        `#include <emissivemap_fragment>
+                        float dist = abs(vWorldPos.z - uPlayheadZ);
+                        // Tight core flash on the leading edge
+                        float coreFlash = 1.0 - smoothstep(0.0, 2.0, dist);
+                        // Wider warm glow halo around the playhead
+                        float halo = 1.0 - smoothstep(0.0, 25.0, dist);
+                        // Bright beacon flare at contact
+                        float flare = exp(-dist * 1.5) * 3.0;
+                        totalEmissiveRadiance += diffuseColor.rgb * coreFlash * 8.0;
+                        totalEmissiveRadiance += diffuseColor.rgb * halo * 1.5;
+                        totalEmissiveRadiance += vec3(1.0) * flare;
+                        `
+                    )}
+                `;
+                noteMat.userData.shader = shader;
+            };
+
+            instancedNotes = new THREE.InstancedMesh(noteGeo, noteMat, totalMelodicNotes);
+            const dummy = new THREE.Object3D();
+            const color = new THREE.Color();
+            let noteIndex = 0;
+            allNotes = [];
+            percussionNotes = [];
+            maxZ = 0;
+            songDuration = 0;
+
+            // Track sequential notes for melodic contours
+            const trackNoteSequences = {};
+
+            midi.tracks.forEach((track, tIdx) => {
+                const isPerc = trackInstruments[tIdx]?.percussion;
+                const instNum = trackInstruments[tIdx]?.number ?? -1;
+                const trackNotes = [];
+
+                track.notes.forEach(note => {
+                    if (note.midi == null || note.duration == null || note.time == null || note.velocity == null) return;
+
+                    songDuration = Math.max(songDuration, note.time + note.duration);
+
+                    // Sustain pedal extends visual duration
+                    let visualDuration = note.duration;
+                    if (isSustainActive(tIdx, note.time)) {
+                        visualDuration = Math.min(note.duration * 2.5, note.duration + 2.0);
+                    }
+
+                    const z = timeToZ(note.time);
+                    const depth = visualDuration * getSpeedAtTime(note.time);
+
+                    if (isPerc) {
+                        // Percussion: position based on time, fixed Y
+                        const x = (tIdx - numTracks / 2) * TRACK_SPACING;
+                        const y = 5;
+                        percussionNotes.push({
+                            midi: note.midi,
+                            time: note.time,
+                            duration: note.duration,
+                            velocity: note.velocity,
+                            trackIdx: tIdx,
+                            scheduled: false,
+                            worldX: x,
+                            worldY: y,
+                            worldZ: z
+                        });
+                        maxZ = Math.max(maxZ, Math.abs(z));
+                        return;
+                    }
+
+                    // PITCH -> Y AXIS (high notes float higher)
+                    const x = (tIdx - numTracks / 2) * TRACK_SPACING;
+                    const y = (note.midi - 40) * PITCH_SPACING;
+
+                    // Velocity -> width/thickness
+                    const width = note.velocity * note.velocity * 20 + 2;
+                    const height = note.velocity * note.velocity * 30 + 1;
+
+                    maxZ = Math.max(maxZ, Math.abs(z));
+
+                    dummy.position.set(x, y, z - depth / 2);
+                    dummy.scale.set(width, height, depth);
+                    dummy.updateMatrix();
+                    instancedNotes.setMatrixAt(noteIndex, dummy.matrix);
+
+                    // Algorithmic color from palette
+                    const baseC = palette[tIdx] || { h: 0.5, s: 0.5, l: 0.5 };
+                    const pitchFactor = (note.midi - 21) / 87;
+                    color.setHSL(baseC.h + pitchFactor * 0.1, baseC.s, baseC.l + pitchFactor * 0.15 - 0.075);
+                    instancedNotes.setColorAt(noteIndex, color);
+
+                    // Per-instance attributes
+                    pitchBendAttr[noteIndex] = getAvgPitchBend(tIdx, note.time, note.duration);
+                    modulationAttr[noteIndex] = getAvgModulation(tIdx, note.time, note.duration);
+                    // Dissonance set after chord detection
+
+                    const noteData = {
+                        midi: note.midi,
+                        time: note.time,
+                        duration: note.duration,
+                        velocity: note.velocity,
+                        trackIdx: tIdx,
+                        instNum: instNum,
+                        scheduled: false,
+                        worldX: x,
+                        worldY: y,
+                        worldZ: z - depth / 2,
+                        noteIndex: noteIndex
+                    };
+                    allNotes.push(noteData);
+                    trackNotes.push(noteData);
+                    noteIndex++;
+                });
+
+                if (trackNotes.length > 0) {
+                    trackNoteSequences[tIdx] = trackNotes.sort((a, b) => a.time - b.time);
+                }
+            });
+
+            allNotes.sort((a, b) => a.time - b.time);
+
+            // --- CHORD DETECTION ---
+            detectChords(allNotes);
+
+            // Mark dissonant notes
+            for (const chord of chordAuras) {
+                if (chord.type === 'dissonant') {
+                    for (const n of allNotes) {
+                        if (Math.abs(n.time - chord.time) < CHORD_WINDOW && n.noteIndex !== undefined) {
+                            dissonanceAttr[n.noteIndex] = 1.0;
+                        }
+                    }
+                }
+            }
+
+            // Apply per-instance attributes
+            instancedNotes.geometry.setAttribute('aPitchBend',
+                new THREE.InstancedBufferAttribute(pitchBendAttr, 1));
+            instancedNotes.geometry.setAttribute('aModulation',
+                new THREE.InstancedBufferAttribute(modulationAttr, 1));
+            instancedNotes.geometry.setAttribute('aDissonance',
+                new THREE.InstancedBufferAttribute(dissonanceAttr, 1));
+
+            scene.add(instancedNotes);
+
+            // ----------------------------------------------------------
+            // PERCUSSION (Instanced Toruses - expanding shockwaves)
+            // ----------------------------------------------------------
+            if (totalPercNotes > 0) {
+                const torusGeo = new THREE.TorusGeometry(5, 1.5, 8, 24);
+                const torusMat = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    roughness: 0.2,
+                    metalness: 1,
+                    transparent: true,
+                    opacity: 0.8,
+                    emissive: 0xffffff,
+                    emissiveIntensity: 0.3
+                });
+
+                torusMat.onBeforeCompile = (shader) => {
+                    shader.uniforms.uPlayheadZ = { value: 0 };
+                    shader.vertexShader = `
+                        varying vec3 vWorldPos;
+                        uniform float uPlayheadZ;
+                        ${shader.vertexShader.replace(
+                            `#include <worldpos_vertex>`,
+                            `#include <worldpos_vertex>
+                            vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                            vWorldPos = wp.xyz;
+                            // Expand when playhead is near
+                            float dist = abs(wp.z - uPlayheadZ);
+                            float expand = smoothstep(80.0, 0.0, dist);
+                            vec3 center = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                            vec3 dir = normalize(wp.xyz - center);
+                            wp.xyz += dir * expand * 20.0;
+                            `
+                        )}
+                    `;
+                    shader.fragmentShader = `
+                        uniform float uPlayheadZ;
+                        varying vec3 vWorldPos;
+                        ${shader.fragmentShader.replace(
+                            `#include <emissivemap_fragment>`,
+                            `#include <emissivemap_fragment>
+                            float dist = abs(vWorldPos.z - uPlayheadZ);
+                            float flash = 1.0 - smoothstep(0.0, 5.0, dist);
+                            float flare = exp(-dist * 0.8) * 4.0;
+                            totalEmissiveRadiance += diffuseColor.rgb * flash * 10.0;
+                            totalEmissiveRadiance += vec3(1.0) * flare;
+                            float fadeOut = smoothstep(0.0, 80.0, dist);
+                            `
+                        )}
+                    `;
+                    torusMat.userData.shader = shader;
+                };
+
+                percussionMesh = new THREE.InstancedMesh(torusGeo, torusMat, totalPercNotes);
+                const pDummy = new THREE.Object3D();
+                const pColor = new THREE.Color();
+
+                percussionNotes.forEach((note, pi) => {
+                    pDummy.position.set(note.worldX, note.worldY, note.worldZ);
+                    pDummy.rotation.x = Math.PI / 2;
+                    pDummy.scale.set(note.velocity * 2, note.velocity * 2, note.velocity);
+                    pDummy.updateMatrix();
+                    percussionMesh.setMatrixAt(pi, pDummy.matrix);
+
+                    // Kick=red, snare=orange, hihat=cyan
+                    if (note.midi <= 40) pColor.setHSL(0.0, 0.9, 0.5);
+                    else if (note.midi <= 50) pColor.setHSL(0.08, 0.9, 0.55);
+                    else pColor.setHSL(0.5, 0.8, 0.55);
+                    percussionMesh.setColorAt(pi, pColor);
+                });
+
+                percussionNotes.forEach(n => { n.scheduled = false; });
+                scene.add(percussionMesh);
+            }
+
+            // ----------------------------------------------------------
+            // MELODIC CONTOUR LINES (TubeGeometry per track)
+            // ----------------------------------------------------------
+            const contourColor = new THREE.Color();
+            for (const [tIdx, notes] of Object.entries(trackNoteSequences)) {
+                if (notes.length < 3) continue;
+                const points = notes.map(n =>
+                    new THREE.Vector3(n.worldX, n.worldY, n.worldZ)
+                );
+                // Sample every Nth note for performance
+                const step = Math.max(1, Math.floor(points.length / 500));
+                const sampled = points.filter((_, i) => i % step === 0);
+                if (sampled.length < 2) continue;
+
+                const curve = new THREE.CatmullRomCurve3(sampled, false, 'catmullrom', 0.5);
+                const tubeGeo = new THREE.TubeGeometry(curve, Math.min(sampled.length * 4, 400), 0.6, 4, false);
+                const base = palette[parseInt(tIdx)] || { h: 0.5, s: 0.5, l: 0.5 };
+                contourColor.setHSL(base.h, base.s * 0.6, base.l * 0.7);
+                const tubeMat = new THREE.MeshBasicMaterial({
+                    color: contourColor,
+                    transparent: true,
+                    opacity: 0.25
+                });
+                const tube = new THREE.Mesh(tubeGeo, tubeMat);
+                scene.add(tube);
+                contourLines.push(tube);
+            }
+
+            // ----------------------------------------------------------
+            // CHORD AURAS (Transparent spheres)
+            // ----------------------------------------------------------
+            const chordColors = {
+                major: new THREE.Color(1.0, 0.85, 0.3),   // Warm gold
+                minor: new THREE.Color(0.3, 0.5, 1.0),    // Cool blue
+                dissonant: new THREE.Color(1.0, 0.15, 0.1), // Harsh red
+                neutral: new THREE.Color(0.5, 0.5, 0.5)
+            };
+            const auraSphereGeo = new THREE.SphereGeometry(1, 12, 12);
+            for (const chord of chordAuras) {
+                const auraMat = new THREE.MeshBasicMaterial({
+                    color: chordColors[chord.type],
+                    transparent: true,
+                    opacity: chord.type === 'dissonant' ? 0.15 : 0.1
+                });
+                const aura = new THREE.Mesh(auraSphereGeo, auraMat);
+                aura.position.copy(chord.position);
+                aura.scale.setScalar(chord.size);
+                aura.userData.chordTime = chord.time;
+                aura.userData.chordType = chord.type;
+                scene.add(aura);
+            }
+
+            // ----------------------------------------------------------
+            // BEAT COMPUTATION
+            // ----------------------------------------------------------
+            computeBeats(midi, songDuration);
+            computeNoteDensity(allNotes);
+
+            // ----------------------------------------------------------
+            // LYRICS / MARKERS (Floating text sprites)
+            // ----------------------------------------------------------
+            const lyricColors = {
+                title: '#ffffff',
+                track: '#aaaaaa'
+            };
+            for (const marker of lyricsMarkers) {
+                const z = timeToZ(marker.time);
+                const sprite = createTextSprite(
+                    marker.text,
+                    lyricColors[marker.type] || '#cccccc',
+                    marker.type === 'title' ? 64 : 36
+                );
+                sprite.position.set(0, 200 + (marker.type === 'title' ? 50 : 0), z);
+                scene.add(sprite);
+            }
+
+            // ----------------------------------------------------------
+            // TERRAIN SHADER (Biome-aware, beat-synced)
+            // ----------------------------------------------------------
+            const terrainLength = maxZ + 10000;
+            const groundGeo = new THREE.PlaneGeometry(800, terrainLength, 100, Math.floor(terrainLength / 20));
+            groundGeo.rotateX(-Math.PI / 2);
+            groundGeo.translate(0, 0, -terrainLength / 2 + 500);
+
+            groundMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    playheadZ: { value: 0 },
+                    baseColor: { value: new THREE.Color(...biome.groundBase) },
+                    lineColor: { value: new THREE.Color(...biome.groundLine) },
+                    beatFlash: { value: 0 }
+                },
+                vertexShader: `
+                    uniform float time;
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        float edgeDist = abs(pos.x);
+                        float mountainMask = smoothstep(50.0, 300.0, edgeDist);
+                        pos.y += sin(pos.x * 0.05 + time * 1.5) * cos(pos.z * 0.02) * mountainMask * 40.0;
+                        vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+                        vWorldPos = worldPosition.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 baseColor;
+                    uniform vec3 lineColor;
+                    uniform float playheadZ;
+                    uniform float beatFlash;
+                    varying vec2 vUv;
+                    varying vec3 vWorldPos;
+                    void main() {
+                        vec2 grid = fract(vUv * vec2(100.0, length(vWorldPos.z) / 10.0));
+                        float line = max(step(0.95, grid.x), step(0.95, grid.y));
+                        float fade = 1.0 - clamp(abs(vWorldPos.z - playheadZ) / 400.0, 0.0, 1.0);
+                        float pulse = 1.0 - smoothstep(0.0, 10.0, abs(vWorldPos.z - playheadZ));
+                        vec3 color = mix(baseColor, lineColor, line * fade);
+                        color += lineColor * pulse * line * 2.0;
+                        // Beat flash: radiate from playhead on downbeats
+                        float beatWave = 1.0 - smoothstep(0.0, 60.0, abs(vWorldPos.z - playheadZ));
+                        color += lineColor * beatFlash * beatWave * 1.5;
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `,
+                wireframe: false
+            });
+
+            const ground = new THREE.Mesh(groundGeo, groundMaterial);
+            scene.add(ground);
+
+            // ----------------------------------------------------------
+            // ENVIRONMENT (Stars / Dust Motes, Lighting)
+            // ----------------------------------------------------------
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = biome.starCount;
+            const starPos = new Float32Array(starCount * 3);
+            for (let i = 0; i < starCount * 3; i += 3) {
+                starPos[i] = (Math.random() - 0.5) * 1000;
+                starPos[i + 1] = Math.random() * 500;
+                starPos[i + 2] = -Math.random() * terrainLength + 500;
+            }
+            starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+            const starMat = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: biome.starSize,
+                transparent: true,
+                opacity: biome.starOpacity
+            });
+            const stars = new THREE.Points(starGeo, starMat);
+            scene.add(stars);
+
+            // Dust motes for classical / jazz biomes
+            if (biome.dustMotes) {
+                const dustGeo = new THREE.BufferGeometry();
+                const dustCount = 8000;
+                const dustPos = new Float32Array(dustCount * 3);
+                for (let i = 0; i < dustCount * 3; i += 3) {
+                    dustPos[i] = (Math.random() - 0.5) * 600;
+                    dustPos[i + 1] = Math.random() * 200;
+                    dustPos[i + 2] = -Math.random() * terrainLength + 500;
+                }
+                dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+                const dustMat = new THREE.PointsMaterial({
+                    color: currentBiome === 'classical' ? 0xffd699 : 0xccaa77,
+                    size: 2.5,
+                    transparent: true,
+                    opacity: 0.15
+                });
+                dustParticles = new THREE.Points(dustGeo, dustMat);
+                scene.add(dustParticles);
+            }
+
+            // Playhead scanner line
+            const scanGeo = new THREE.BoxGeometry(800, 0.5, 0.5);
+            const scanMat = new THREE.MeshBasicMaterial({
+                color: new THREE.Color(...biome.groundLine)
+            });
+            const scanner = new THREE.Mesh(scanGeo, scanMat);
+            scanner.position.set(0, 0, 0);
+            scene.add(scanner);
+
+            // -------------------------------------------------------
+            // ORBITING POINT LIGHTS (curving loops around the track)
+            // -------------------------------------------------------
+            const orbitLightConfigs = [
+                { color: 0xff4488, radius: 80, speed: 0.7, yOffset: 60, phase: 0, zAmp: 150 },
+                { color: 0x44aaff, radius: 100, speed: 0.5, yOffset: 90, phase: Math.PI * 0.66, zAmp: 200 },
+                { color: 0x88ff44, radius: 70, speed: 0.9, yOffset: 40, phase: Math.PI * 1.33, zAmp: 120 },
+                { color: 0xffaa22, radius: 90, speed: 0.6, yOffset: 70, phase: Math.PI * 0.5, zAmp: 180 },
+                { color: 0xaa44ff, radius: 110, speed: 0.4, yOffset: 110, phase: Math.PI, zAmp: 250 },
+                { color: 0xff8866, radius: 60, speed: 1.1, yOffset: 30, phase: Math.PI * 1.7, zAmp: 100 },
+            ];
+
+            for (const cfg of orbitLightConfigs) {
+                const light = new THREE.PointLight(cfg.color, 2, 350, 1.5);
+                scene.add(light);
+
+                // Small visible sphere to represent the light
+                const sphereGeo = new THREE.SphereGeometry(1.5, 8, 8);
+                const sphereMat = new THREE.MeshBasicMaterial({
+                    color: cfg.color,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                light.add(sphere);
+
+                orbitingLights.push({ light, config: cfg });
+            }
+
+            // Lighting
+            const ambient = new THREE.AmbientLight(0xffffff, biome.ambientIntensity);
+            scene.add(ambient);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(100, 200, 50);
+            scene.add(dirLight);
+
+            // Jazz biome: stage spotlights
+            if (currentBiome === 'jazz') {
+                const spotColors = [0xffaa44, 0xff6622, 0xffdd88];
+                for (let i = 0; i < 3; i++) {
+                    const spot = new THREE.SpotLight(spotColors[i], 2, 500, Math.PI / 6, 0.5, 1);
+                    spot.position.set((i - 1) * 150, 250, -500);
+                    spot.target.position.set((i - 1) * 100, 0, -600);
+                    scene.add(spot);
+                    scene.add(spot.target);
+                    spotlights.push(spot);
+                }
+            }
+
+            // Camera reset
+            camera.position.set(0, 60, 50);
+            controls.target.set(0, 30, -50);
+        }
+
+        // ============================================================
+        // SECTION 7: AUDIO ENGINE
+        // ============================================================
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterVolume = audioCtx.createGain();
+            masterVolume.gain.value = 0.8;
+            masterVolume.connect(audioCtx.destination);
+        }
+
+        function scheduleAudio() {
+            if (!isPlaying) return;
+            const lookAhead = 0.15;
+            const currentAudioTime = audioCtx.currentTime - startTime;
+
+            // Melodic notes
+            for (let i = 0; i < allNotes.length; i++) {
+                const note = allNotes[i];
+                if (note.scheduled) continue;
+                if (note.time > currentAudioTime + lookAhead) break;
+                playSynthNote(note);
+                note.scheduled = true;
+            }
+
+            // Percussion notes
+            for (let i = 0; i < percussionNotes.length; i++) {
+                const note = percussionNotes[i];
+                if (note.scheduled) continue;
+                if (note.time > currentAudioTime + lookAhead) break;
+                playDrumHit(note);
+                note.scheduled = true;
+            }
+        }
+
+        function playSynthNote(note) {
+            const timeToPlay = startTime + note.time;
+            const dur = note.duration;
+
+            if (!isFinite(note.worldX) || !isFinite(note.worldY) || !isFinite(note.worldZ) ||
+                !isFinite(note.midi) || !isFinite(dur) || !isFinite(timeToPlay)) {
+                return;
+            }
+
+            // Instrument-aware synthesis
+            const config = getInstrumentConfig(note.trackIdx, note.instNum);
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = config.wave;
+            osc.frequency.value = 440 * Math.pow(2, (note.midi - 69) / 12);
+
+            // Apply pitch bend to frequency
+            const bend = getAvgPitchBend(note.trackIdx, note.time, dur);
+            if (Math.abs(bend) > 0.01) {
+                osc.frequency.value *= Math.pow(2, bend * 2 / 12); // +/- 2 semitones
+            }
+
+            // Instrument-specific ADSR envelope
+            const maxVol = note.velocity * 0.6;
+            const safeDur = Math.max(dur, 0.05);
+            gain.gain.setValueAtTime(0, timeToPlay);
+            gain.gain.linearRampToValueAtTime(maxVol, timeToPlay + config.a);
+            gain.gain.linearRampToValueAtTime(maxVol * config.s, timeToPlay + config.a + config.d);
+
+            // Sustain pedal: hold the release longer
+            const sustainActive = isSustainActive(note.trackIdx, note.time);
+            const releaseTime = sustainActive ? config.r * 3 : config.r;
+            gain.gain.setTargetAtTime(0, timeToPlay + safeDur, releaseTime);
+
+            // Modulation -> vibrato on oscillator frequency
+            const mod = getAvgModulation(note.trackIdx, note.time, dur);
+            if (mod > 0.1) {
+                const lfo = audioCtx.createOscillator();
+                const lfoGain = audioCtx.createGain();
+                lfo.frequency.value = 5.5; // vibrato rate
+                lfoGain.gain.value = mod * 15; // vibrato depth in Hz
+                lfo.connect(lfoGain);
+                lfoGain.connect(osc.frequency);
+                lfo.start(timeToPlay);
+                lfo.stop(timeToPlay + dur + releaseTime + 0.5);
+                lfo.onended = () => { lfo.disconnect(); lfoGain.disconnect(); };
+            }
+
+            // Spatial Audio
+            const panner = audioCtx.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            panner.refDistance = 50;
+            panner.maxDistance = 1000;
+            panner.rolloffFactor = 0.5;
+
+            if (panner.positionX) {
+                panner.positionX.value = note.worldX;
+                panner.positionY.value = note.worldY;
+                panner.positionZ.value = note.worldZ;
+            } else {
+                panner.setPosition(note.worldX, note.worldY, note.worldZ);
+            }
+
+            osc.connect(gain);
+            gain.connect(panner);
+            panner.connect(masterVolume);
+
+            osc.start(timeToPlay);
+            osc.stop(timeToPlay + dur + releaseTime + 1.0);
+
+            osc.onended = () => {
+                osc.disconnect();
+                gain.disconnect();
+                panner.disconnect();
+            };
+        }
+
+        function playDrumHit(note) {
+            const timeToPlay = startTime + note.time;
+
+            if (!isFinite(timeToPlay) || !isFinite(note.velocity)) return;
+
+            // Noise-based drum synthesis
+            const bufferSize = Math.floor(audioCtx.sampleRate * 0.25);
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+
+            // Drum type by MIDI note number
+            if (note.midi <= 40) {
+                // Kick: low-pass, punchy
+                filter.type = 'lowpass';
+                filter.frequency.value = 150;
+                filter.Q.value = 8;
+            } else if (note.midi <= 53) {
+                // Snare: band-pass
+                filter.type = 'bandpass';
+                filter.frequency.value = 1200;
+                filter.Q.value = 1;
+            } else {
+                // Hi-hat / cymbal: high-pass
+                filter.type = 'highpass';
+                filter.frequency.value = 6000;
+                filter.Q.value = 0.5;
+            }
+
+            gain.gain.setValueAtTime(note.velocity * 0.7, timeToPlay);
+            gain.gain.exponentialRampToValueAtTime(0.001, timeToPlay + 0.25);
+
+            // Spatial panning
+            const panner = audioCtx.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            panner.refDistance = 50;
+            panner.maxDistance = 1000;
+            panner.rolloffFactor = 0.5;
+            if (panner.positionX) {
+                panner.positionX.value = note.worldX;
+                panner.positionY.value = note.worldY;
+                panner.positionZ.value = note.worldZ;
+            } else {
+                panner.setPosition(note.worldX, note.worldY, note.worldZ);
+            }
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(panner);
+            panner.connect(masterVolume);
+
+            noise.start(timeToPlay);
+            noise.stop(timeToPlay + 0.3);
+
+            noise.onended = () => {
+                noise.disconnect();
+                filter.disconnect();
+                gain.disconnect();
+                panner.disconnect();
+            };
+        }
+
+        // ============================================================
+        // SECTION 8: FILE HANDLING
+        // ============================================================
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loading').style.display = 'block';
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    initAudio();
+                    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+                    const midiData = new Midi(e.target.result);
+                    buildWorld(midiData);
+
+                    document.getElementById('ui-overlay').style.opacity = '0';
+                    setTimeout(() => document.getElementById('ui-overlay').style.display = 'none', 500);
+                    document.getElementById('controls-info').style.display = 'block';
+
+                    startTime = audioCtx.currentTime;
+                    isPlaying = true;
+                } catch (error) {
+                    console.error("Error parsing MIDI:", error);
+                    alert("Could not parse MIDI file. Ensure it is a valid .mid file.");
+                    document.getElementById('loading').style.display = 'none';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ============================================================
+        // SECTION 9: RENDER LOOP (with adaptive camera & beat sync)
+        // ============================================================
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isPlaying && audioCtx) {
+                const elapsedTime = audioCtx.currentTime - startTime;
+                const currentSpeed = getSpeedAtTime(elapsedTime);
+                const playheadZ = timeToZ(elapsedTime);
+
+                // Schedule audio
+                scheduleAudio();
+
+                // --- ADAPTIVE CAMERA CHOREOGRAPHY ---
+                const density = getDensityAtTime(elapsedTime);
+                const maxDensity = noteDensityMap.reduce((m, d) => Math.max(m, d.density), 1);
+                const densityRatio = density / maxDensity;
+
+                // High density: pull back, slight shake. Low density: move closer.
+                const targetYOffset = 40 + densityRatio * 40; // 40-80
+                const targetZOffset = 50 + densityRatio * 30; // 50-80 behind playhead
+                const cameraShake = densityRatio > 0.7 ? (Math.random() - 0.5) * densityRatio * 2 : 0;
+
+                // Smooth camera movement with dynamic scroll speed
+                const dt = currentSpeed * (1 / 60);
+                camera.position.z -= dt;
+                controls.target.z -= dt;
+
+
+                // Spatial Audio Listener
+                const listener = audioCtx.listener;
+                if (listener.positionX) {
+                    listener.positionX.setTargetAtTime(camera.position.x, audioCtx.currentTime, 0.01);
+                    listener.positionY.setTargetAtTime(camera.position.y, audioCtx.currentTime, 0.01);
+                    listener.positionZ.setTargetAtTime(camera.position.z, audioCtx.currentTime, 0.01);
+                    const dir = new THREE.Vector3();
+                    camera.getWorldDirection(dir);
+                    listener.forwardX.setTargetAtTime(dir.x, audioCtx.currentTime, 0.01);
+                    listener.forwardY.setTargetAtTime(dir.y, audioCtx.currentTime, 0.01);
+                    listener.forwardZ.setTargetAtTime(dir.z, audioCtx.currentTime, 0.01);
+                }
+
+                // --- BEAT SYNCHRONIZATION ---
+                beatFlashIntensity *= 0.9; // Decay
+                for (const beat of beatEvents) {
+                    const timeDiff = elapsedTime - beat.time;
+                    if (timeDiff >= 0 && timeDiff < 0.08) {
+                        beatFlashIntensity = beat.isDownbeat ? 1.0 : 0.4;
+                        // Boost bloom momentarily on downbeats
+                        if (beat.isDownbeat) {
+                            bloomPass.strength = BIOMES[currentBiome].bloomStrength + 0.5;
+                        }
+                        break;
+                    }
+                }
+                // Decay bloom back to biome default
+                bloomPass.strength += (BIOMES[currentBiome].bloomStrength - bloomPass.strength) * 0.05;
+
+                // --- UPDATE SHADERS ---
+                if (instancedNotes && instancedNotes.material.userData.shader) {
+                    instancedNotes.material.userData.shader.uniforms.uPlayheadZ.value = playheadZ;
+                    instancedNotes.material.userData.shader.uniforms.uTime.value = elapsedTime;
+                }
+                if (percussionMesh && percussionMesh.material.userData.shader) {
+                    percussionMesh.material.userData.shader.uniforms.uPlayheadZ.value = playheadZ;
+                }
+                if (groundMaterial) {
+                    groundMaterial.uniforms.time.value = elapsedTime;
+                    groundMaterial.uniforms.playheadZ.value = playheadZ;
+                    groundMaterial.uniforms.beatFlash.value = beatFlashIntensity;
+                }
+
+                // --- DUST MOTES DRIFT ---
+                if (dustParticles) {
+                    const positions = dustParticles.geometry.attributes.position.array;
+                    for (let i = 0; i < positions.length; i += 3) {
+                        positions[i] += Math.sin(elapsedTime * 0.3 + i) * 0.03;
+                        positions[i + 1] += Math.cos(elapsedTime * 0.2 + i) * 0.02;
+                    }
+                    dustParticles.geometry.attributes.position.needsUpdate = true;
+                }
+
+                // --- ORBITING POINT LIGHTS ---
+                for (const orb of orbitingLights) {
+                    const cfg = orb.config;
+                    const t = elapsedTime * cfg.speed + cfg.phase;
+                    // Lissajous-like curving loops around the playhead
+                    const x = Math.sin(t) * cfg.radius + Math.sin(t * 1.7) * cfg.radius * 0.3;
+                    const y = cfg.yOffset + Math.sin(t * 0.8 + cfg.phase) * 30;
+                    const z = playheadZ + Math.cos(t * 0.6) * cfg.zAmp + Math.sin(t * 1.3) * cfg.zAmp * 0.4;
+                    orb.light.position.set(x, y, z);
+                    // Pulse intensity with beat
+                    orb.light.intensity = 2 + beatFlashIntensity * 3;
+                }
+
+                // --- JAZZ SPOTLIGHTS SWAY ---
+                for (let i = 0; i < spotlights.length; i++) {
+                    const spot = spotlights[i];
+                    spot.target.position.z = playheadZ - 100;
+                    spot.position.z = playheadZ + 100;
+                    spot.intensity = 1.5 + beatFlashIntensity * 2;
+                }
+
+                // Auto stop at song end
+                if (Math.abs(playheadZ) > maxZ + 100) {
+                    isPlaying = false;
+                    document.getElementById('controls-info').innerText = "Journey Complete. Refresh to load another.";
+                }
+            }
+
+            controls.update();
+            composer.render();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Boot
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<title>Sequential Node Builder</title>
+
+<style>
+  :root {
+    --bg: #000;
+    --panel: #10131a;
+    --panel2: #171b24;
+    --line: rgba(255,255,255,0.09);
+    --line2: rgba(255,255,255,0.16);
+    --text: #e7ecf7;
+    --muted: #98a1b7;
+    --accent: #57e0a0;
+    --accent2: #7b61ff;
+    --danger: #ff6b81;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: Inter, system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  .app {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 18px;
+  }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .title {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .subtitle {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 76ch;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  button, input, select {
+    font: inherit;
+  }
+
+  button {
+    border: 1px solid var(--line2);
+    background: var(--panel2);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    transition: 0.12s ease;
+  }
+
+  button:hover {
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  button.accent {
+    background: var(--accent);
+    color: #04150d;
+    border-color: transparent;
+    font-weight: 700;
+  }
+
+  button.small {
+    padding: 6px 9px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  button.danger:hover {
+    border-color: var(--danger);
+    color: #fff;
+  }
+
+  .summary {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 0 14px;
+  }
+
+  .empty {
+    padding: 28px;
+    text-align: center;
+    border: 1px dashed var(--line2);
+    border-radius: 14px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.02);
+  }
+
+  .node {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 12px 28px rgba(0,0,0,.24);
+  }
+
+  .node-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .node-kicker {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  .node-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .node-time {
+    margin-top: 4px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .node-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .meta-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) 180px;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  label.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  input[type="text"],
+  input[type="number"],
+  select {
+    width: 100%;
+    background: #0b0f16;
+    border: 1px solid var(--line2);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 9px 10px;
+    outline: none;
+  }
+
+  input[type="text"]:focus,
+  input[type="number"]:focus,
+  select:focus {
+    border-color: var(--accent);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 150px 1fr 1fr;
+    gap: 10px 12px;
+    align-items: center;
+  }
+
+  .grid-head {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  .param-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .param-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .param-range {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .slider-cell {
+    min-width: 0;
+  }
+
+  .slider-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .value-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 7px;
+  }
+
+  .value-chip.start {
+    color: #c3b7ff;
+  }
+
+  .value-chip.end {
+    color: #9ff0ca;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  input[type="range"].start-range {
+    accent-color: var(--accent2);
+  }
+
+  input[type="range"].end-range {
+    accent-color: var(--accent);
+  }
+
+  .output {
+    margin-top: 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .output-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .output-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+
+  pre {
+    margin: 0;
+    padding: 14px;
+    min-height: 160px;
+    max-height: 42vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--accent);
+  }
+
+  .hint {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 900px) {
+    .meta-row {
+      grid-template-columns: 1fr;
+    }
+
+    .grid {
+      grid-template-columns: 120px 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+
+    .grid-head {
+      display: none;
+    }
+
+    .slider-cell::before,
+    .select-cell.start::before,
+    .select-cell.end::before {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .slider-cell.start::before,
+    .select-cell.start::before { content: "Start"; }
+    .slider-cell.end::before,
+    .select-cell.end::before { content: "End"; }
+  }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <div>
+      <div class="title">Sequential Node Builder</div>
+      <div class="subtitle">
+        Simpler model: node order = time order, duration = length, timings are derived automatically,
+        numeric params use sliders, and every new node starts from the previous node’s end values.
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button id="addBtn">+ node</button>
+      <button id="clearBtn">clear</button>
+      <button id="copyBtn" class="accent">copy syntax</button>
+    </div>
+  </div>
+
+  <div class="summary" id="summary">Total duration: 0s</div>
+
+  <div id="nodes"></div>
+  <div id="empty" class="empty">No nodes yet. Click <strong>+ node</strong> to add the first one.</div>
+
+  <div class="hint">
+    New nodes are auto-seeded from the previous node’s <strong>end</strong> values, so the normal workflow is:
+    <strong>add node → set duration → adjust end sliders</strong>.
+  </div>
+
+  <section class="output">
+    <div class="output-head">
+      <div class="output-label">generated syntax</div>
+      <button id="copyBtn2" class="small">copy</button>
+    </div>
+    <pre id="output"># No nodes yet</pre>
+  </section>
+</div>
+
+<script>
+(() => {
+  const PARAMS = [
+    { key: 'density',    min: 0,     max: 1,   step: 0.001, a: 0.1, b: 0.5 },
+    { key: 'connect',    min: 0,     max: 200, step: 0.1,   a: 20,  b: 80  },
+    { key: 'intensity',  min: 0,     max: 1,   step: 0.001, a: 0.1, b: 0.3 },
+    { key: 'spread',     min: 0,     max: 10,  step: 0.001, a: 1.0, b: 2.0 },
+    { key: 'size',       min: 0.001, max: 1,   step: 0.001, a: 0.1, b: 0.5 },
+    { key: 'turbulence', min: 0,     max: 1,   step: 0.001, a: 0.1, b: 0.5 },
+    { key: 'opacity',    min: 0,     max: 1,   step: 0.001, a: 0.2, b: 1.0 }
+  ];
+
+  const DIRECTIONS = ['still', 'up', 'down', 'left', 'right', 'inward', 'outward'];
+  const DRIFT_MAGS = ['0.001', '0.005', '0.01', '0.02', 'slow', 'fast'];
+  const PALETTES = ['cold', 'cool', 'warm', 'void', 'fire', 'neon'];
+
+  let nodes = [];
+
+  const nodesEl = document.getElementById('nodes');
+  const emptyEl = document.getElementById('empty');
+  const summaryEl = document.getElementById('summary');
+  const outputEl = document.getElementById('output');
+  const copyButtons = [document.getElementById('copyBtn'), document.getElementById('copyBtn2')];
+
+  function uid() {
+    return Math.random().toString(36).slice(2, 9);
+  }
+
+  function esc(str) {
+    return String(str).replace(/[&<>"']/g, m => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[m]));
+  }
+
+  function round3(n) {
+    return Math.round(n * 1000) / 1000;
+  }
+
+  function fmt(v) {
+    if (typeof v === 'number') return String(round3(v));
+    const n = parseFloat(v);
+    if (!Number.isNaN(n) && String(v).trim() !== '') return String(round3(n));
+    return String(v);
+  }
+
+  function displayName(node, i) {
+    const name = String(node.name || '').trim();
+    return name || `Phase ${i + 1}`;
+  }
+
+  function clampNumeric(v, def) {
+    const n = parseFloat(v);
+    if (Number.isNaN(n)) return def.a;
+    return round3(Math.min(def.max, Math.max(def.min, n)));
+  }
+
+  function cleanDuration(v, fallback = 10) {
+    const n = parseFloat(v);
+    if (Number.isNaN(n)) return fallback;
+    return round3(Math.max(0.1, n));
+  }
+
+  function defaultParams() {
+    const p = {};
+    PARAMS.forEach(def => {
+      p[def.key] = { a: def.a, b: def.b };
+    });
+    p.drift = {
+      dirA: 'still',
+      magA: '0.01',
+      dirB: 'up',
+      magB: '0.01'
+    };
+    p.palette = {
+      a: 'cold',
+      b: 'cool'
+    };
+    return p;
+  }
+
+  function seedNodeFromPrevious(prev, node) {
+    if (!prev) return;
+
+    PARAMS.forEach(def => {
+      const prevEnd = prev.params[def.key].b;
+      node.params[def.key].a = prevEnd;
+      node.params[def.key].b = prevEnd;
+    });
+
+    node.params.drift.dirA = prev.params.drift.dirB;
+    node.params.drift.magA = prev.params.drift.magB;
+    node.params.drift.dirB = prev.params.drift.dirB;
+    node.params.drift.magB = prev.params.drift.magB;
+
+    node.params.palette.a = prev.params.palette.b;
+    node.params.palette.b = prev.params.palette.b;
+  }
+
+  function setNodeStartFromPrevious(index) {
+    if (index <= 0) return;
+
+    const prev = nodes[index - 1];
+    const node = nodes[index];
+    if (!prev || !node) return;
+
+    PARAMS.forEach(def => {
+      node.params[def.key].a = prev.params[def.key].b;
+    });
+
+    node.params.drift.dirA = prev.params.drift.dirB;
+    node.params.drift.magA = prev.params.drift.magB;
+    node.params.palette.a = prev.params.palette.b;
+  }
+
+  function setNodeEndFromStart(node) {
+    PARAMS.forEach(def => {
+      node.params[def.key].b = node.params[def.key].a;
+    });
+
+    node.params.drift.dirB = node.params.drift.dirA;
+    node.params.drift.magB = node.params.drift.magA;
+    node.params.palette.b = node.params.palette.a;
+  }
+
+  function makeNode(prev = null) {
+    const node = {
+      id: uid(),
+      name: `Phase ${nodes.length + 1}`,
+      duration: 10,
+      params: defaultParams()
+    };
+
+    if (prev) seedNodeFromPrevious(prev, node);
+    return node;
+  }
+
+  function schedule() {
+    let t = 0;
+    return nodes.map(node => {
+      const duration = cleanDuration(node.duration, 10);
+      const start = round3(t);
+      const end = round3(t + duration);
+      t = end;
+      return { start, end, duration };
+    });
+  }
+
+  function syntaxText() {
+    if (!nodes.length) return '# No nodes yet';
+
+    const times = schedule();
+
+    return nodes.map((node, i) => {
+      const p = node.params;
+      const t = times[i];
+
+      return [
+        `# --- ${displayName(node, i)} ---`,
+        `density(${fmt(p.density.a)} | ${fmt(p.density.b)})`,
+        `connect(${fmt(p.connect.a)} | ${fmt(p.connect.b)})`,
+        `drift(${p.drift.dirA}, ${fmt(p.drift.magA)} | ${p.drift.dirB}, ${fmt(p.drift.magB)})`,
+        `intensity(${fmt(p.intensity.a)} | ${fmt(p.intensity.b)})`,
+        `spread(${fmt(p.spread.a)} | ${fmt(p.spread.b)})`,
+        `size(${fmt(p.size.a)} | ${fmt(p.size.b)})`,
+        `turbulence(${fmt(p.turbulence.a)} | ${fmt(p.turbulence.b)})`,
+        `opacity(${fmt(p.opacity.a)} | ${fmt(p.opacity.b)})`,
+        `palette(${p.palette.a} | ${p.palette.b})`,
+        `||| ${fmt(t.start)}s ${fmt(t.end)}s`
+      ].join('\n');
+    }).join('\n\n');
+  }
+
+  function sliderCell(index, def, side, value) {
+    const sideClass = side === 'a' ? 'start' : 'end';
+    return `
+      <div class="slider-cell ${sideClass}">
+        <div class="slider-top">
+          <span class="value-chip ${sideClass}">${fmt(value)}</span>
+        </div>
+        <input
+          type="range"
+          class="range-input ${sideClass === 'start' ? 'start-range' : 'end-range'}"
+          min="${def.min}"
+          max="${def.max}"
+          step="${def.step}"
+          value="${value}"
+          data-index="${index}"
+          data-key="${def.key}"
+          data-side="${side}"
+        />
+      </div>
+    `;
+  }
+
+  function selectOptions(list, selected) {
+    return list.map(v => `<option value="${v}" ${String(v) === String(selected) ? 'selected' : ''}>${v}</option>`).join('');
+  }
+
+  function renderNodes() {
+    if (!nodes.length) {
+      nodesEl.innerHTML = '';
+      emptyEl.style.display = '';
+      refreshDerived();
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    const times = schedule();
+
+    nodesEl.innerHTML = nodes.map((node, i) => `
+      <section class="node">
+        <div class="node-head">
+          <div>
+            <div class="node-kicker">node ${i + 1}</div>
+            <div class="node-title" data-role="title" data-index="${i}">${esc(displayName(node, i))}</div>
+            <div class="node-time" data-role="time" data-index="${i}">
+              ${fmt(times[i].start)}s → ${fmt(times[i].end)}s • ${fmt(times[i].duration)}s
+            </div>
+          </div>
+
+          <div class="node-actions">
+            ${i > 0 ? `<button class="small" data-action="start-prev" data-index="${i}">start = prev end</button>` : ''}
+            <button class="small" data-action="end-start" data-index="${i}">end = start</button>
+            ${i > 0 ? `<button class="small" data-action="up" data-index="${i}">↑</button>` : ''}
+            ${i < nodes.length - 1 ? `<button class="small" data-action="down" data-index="${i}">↓</button>` : ''}
+            <button class="small" data-action="add-after" data-index="${i}">+ after</button>
+            <button class="small danger" data-action="delete" data-index="${i}">delete</button>
+          </div>
+        </div>
+
+        <div class="meta-row">
+          <label class="field">
+            Name
+            <input type="text" class="name-input" data-index="${i}" value="${esc(node.name)}" />
+          </label>
+
+          <label class="field">
+            Duration (s)
+            <input type="number" min="0.1" step="0.1" class="duration-input" data-index="${i}" value="${fmt(node.duration)}" />
+          </label>
+        </div>
+
+        <div class="grid">
+          <div></div>
+          <div class="grid-head">start</div>
+          <div class="grid-head">end</div>
+
+          ${PARAMS.map(def => `
+            <div class="param-label">
+              <div class="param-name">${def.key}</div>
+              <div class="param-range">${fmt(def.min)} → ${fmt(def.max)}</div>
+            </div>
+            ${sliderCell(i, def, 'a', node.params[def.key].a)}
+            ${sliderCell(i, def, 'b', node.params[def.key].b)}
+          `).join('')}
+
+          <div class="param-label">
+            <div class="param-name">drift dir</div>
+            <div class="param-range">enum</div>
+          </div>
+          <div class="select-cell start">
+            <select class="drift-select" data-index="${i}" data-field="dirA">
+              ${selectOptions(DIRECTIONS, node.params.drift.dirA)}
+            </select>
+          </div>
+          <div class="select-cell end">
+            <select class="drift-select" data-index="${i}" data-field="dirB">
+              ${selectOptions(DIRECTIONS, node.params.drift.dirB)}
+            </select>
+          </div>
+
+          <div class="param-label">
+            <div class="param-name">drift mag</div>
+            <div class="param-range">enum</div>
+          </div>
+          <div class="select-cell start">
+            <select class="drift-select" data-index="${i}" data-field="magA">
+              ${selectOptions(DRIFT_MAGS, node.params.drift.magA)}
+            </select>
+          </div>
+          <div class="select-cell end">
+            <select class="drift-select" data-index="${i}" data-field="magB">
+              ${selectOptions(DRIFT_MAGS, node.params.drift.magB)}
+            </select>
+          </div>
+
+          <div class="param-label">
+            <div class="param-name">palette</div>
+            <div class="param-range">enum</div>
+          </div>
+          <div class="select-cell start">
+            <select class="palette-select" data-index="${i}" data-side="a">
+              ${selectOptions(PALETTES, node.params.palette.a)}
+            </select>
+          </div>
+          <div class="select-cell end">
+            <select class="palette-select" data-index="${i}" data-side="b">
+              ${selectOptions(PALETTES, node.params.palette.b)}
+            </select>
+          </div>
+        </div>
+      </section>
+    `).join('');
+
+    refreshDerived();
+  }
+
+  function refreshDerived() {
+    const times = schedule();
+    const total = times.length ? times[times.length - 1].end : 0;
+
+    summaryEl.textContent = `Total duration: ${fmt(total)}s`;
+    outputEl.textContent = syntaxText();
+
+    times.forEach((t, i) => {
+      const el = nodesEl.querySelector(`[data-role="time"][data-index="${i}"]`);
+      if (el) el.textContent = `${fmt(t.start)}s → ${fmt(t.end)}s • ${fmt(t.duration)}s`;
+    });
+  }
+
+  function renderAll() {
+    renderNodes();
+  }
+
+  function addNode(afterIndex = nodes.length - 1) {
+    const prev = afterIndex >= 0 ? nodes[afterIndex] : null;
+    nodes.splice(afterIndex + 1, 0, makeNode(prev));
+    renderAll();
+  }
+
+  function flashCopied() {
+    copyButtons.forEach(btn => {
+      const original = btn.dataset.original || btn.textContent;
+      btn.dataset.original = original;
+      btn.textContent = 'copied!';
+      setTimeout(() => {
+        btn.textContent = original;
+      }, 900);
+    });
+  }
+
+  function copySyntax() {
+    const text = syntaxText();
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(flashCopied);
+      return;
+    }
+
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    flashCopied();
+  }
+
+  document.getElementById('addBtn').addEventListener('click', () => addNode());
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    nodes = [];
+    renderAll();
+  });
+
+  copyButtons.forEach(btn => btn.addEventListener('click', copySyntax));
+
+  nodesEl.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+
+    const i = Number(btn.dataset.index);
+    const node = nodes[i];
+    if (!node) return;
+
+    switch (btn.dataset.action) {
+      case 'start-prev':
+        setNodeStartFromPrevious(i);
+        renderAll();
+        break;
+
+      case 'end-start':
+        setNodeEndFromStart(node);
+        renderAll();
+        break;
+
+      case 'add-after':
+        addNode(i);
+        break;
+
+      case 'delete':
+        nodes.splice(i, 1);
+        renderAll();
+        break;
+
+      case 'up':
+        if (i > 0) {
+          [nodes[i - 1], nodes[i]] = [nodes[i], nodes[i - 1]];
+          renderAll();
+        }
+        break;
+
+      case 'down':
+        if (i < nodes.length - 1) {
+          [nodes[i], nodes[i + 1]] = [nodes[i + 1], nodes[i]];
+          renderAll();
+        }
+        break;
+    }
+  });
+
+  nodesEl.addEventListener('input', e => {
+    const t = e.target;
+    const i = Number(t.dataset.index);
+    const node = nodes[i];
+    if (!node) return;
+
+    if (t.classList.contains('name-input')) {
+      node.name = t.value;
+      const title = nodesEl.querySelector(`[data-role="title"][data-index="${i}"]`);
+      if (title) title.textContent = displayName(node, i);
+      outputEl.textContent = syntaxText();
+      return;
+    }
+
+    if (t.classList.contains('duration-input')) {
+      const n = parseFloat(t.value);
+      if (!Number.isNaN(n) && n > 0) {
+        node.duration = round3(n);
+        refreshDerived();
+      }
+      return;
+    }
+
+    if (t.classList.contains('range-input')) {
+      const key = t.dataset.key;
+      const side = t.dataset.side;
+      const def = PARAMS.find(d => d.key === key);
+      if (!def) return;
+
+      const value = clampNumeric(t.value, def);
+      node.params[key][side] = value;
+
+      const chip = t.closest('.slider-cell')?.querySelector('.value-chip');
+      if (chip) chip.textContent = fmt(value);
+
+      outputEl.textContent = syntaxText();
+      return;
+    }
+  });
+
+  nodesEl.addEventListener('change', e => {
+    const t = e.target;
+    const i = Number(t.dataset.index);
+    const node = nodes[i];
+    if (!node) return;
+
+    if (t.classList.contains('duration-input')) {
+      node.duration = cleanDuration(t.value, node.duration || 10);
+      t.value = fmt(node.duration);
+      refreshDerived();
+      return;
+    }
+
+    if (t.classList.contains('drift-select')) {
+      node.params.drift[t.dataset.field] = t.value;
+      outputEl.textContent = syntaxText();
+      return;
+    }
+
+    if (t.classList.contains('palette-select')) {
+      node.params.palette[t.dataset.side] = t.value;
+      outputEl.textContent = syntaxText();
+      return;
+    }
+  });
+
+  renderAll();
+})();
+</script>
