@@ -928,6 +928,24 @@ h3 a {
   transform: translateY(-50%) rotate(-90deg);
 }
 
+/* ── Master Slider ───────────────────────────── */
+
+.gen-master-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gen-master-label {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #64748b;
+  width: 52px;
+  flex-shrink: 0;
+}
+
 /* ── Draw Mode ───────────────────────────── */
 
 .draw-mode {

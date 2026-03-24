@@ -129,6 +129,7 @@ export default function App() {
   );
   const [genSensitivity, setGenSensitivity] = useState(0.5);
   const [genDrama, setGenDrama] = useState(0.5);
+  const [genMaster, setGenMaster] = useState(1.0);
 
   // Lifted state for segment selection (shared between editor + waveform)
   const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0);
@@ -754,6 +755,23 @@ export default function App() {
 
               <div className="gen-divider" />
 
+              {/* Master attenuation */}
+              <div className="gen-master-row">
+                <span className="gen-master-label">master</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={genMaster}
+                  onChange={(e) => setGenMaster(parseFloat(e.target.value))}
+                  className="gen-slider"
+                />
+                <span className="gen-val">{genMaster.toFixed(2)}</span>
+              </div>
+
+              <div className="gen-divider" />
+
               {/* Per-parameter ranges */}
               {(Object.keys(PARAM_LIMITS) as (keyof GenerateRanges)[]).map(
                 (param) => {
@@ -777,8 +795,8 @@ export default function App() {
                             }}
                             className="gen-slider"
                           />
-                          <span className="gen-val">
-                            {range.min.toFixed(limits.step < 1 ? 2 : 0)}
+                          <span className="gen-val" style={genMaster < 1 ? { opacity: 0.5 } : undefined}>
+                            {(range.min * genMaster).toFixed(limits.step < 1 ? 2 : 0)}
                           </span>
                         </div>
                         <div className="gen-range-half">
@@ -795,8 +813,8 @@ export default function App() {
                             }}
                             className="gen-slider"
                           />
-                          <span className="gen-val">
-                            {range.max.toFixed(limits.step < 1 ? 2 : 0)}
+                          <span className="gen-val" style={genMaster < 1 ? { opacity: 0.5 } : undefined}>
+                            {(range.max * genMaster).toFixed(limits.step < 1 ? 2 : 0)}
                           </span>
                         </div>
                       </div>
@@ -812,6 +830,7 @@ export default function App() {
                   setGenRanges(JSON.parse(JSON.stringify(DEFAULT_RANGES)));
                   setGenSensitivity(0.5);
                   setGenDrama(0.5);
+                  setGenMaster(1.0);
                 }}
                 className="gen-btn gen-btn-reset"
               >
