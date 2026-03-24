@@ -353,7 +353,11 @@ function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
  * This ensures the full slider range is utilized even when
  * the raw audio features cluster in a narrow band.
  */
-export function arcsToSequence(arcs: ArcSegment[], ranges: GenerateRanges = DEFAULT_RANGES): string {
+export function arcsToSequence(
+  arcs: ArcSegment[],
+  ranges: GenerateRanges = DEFAULT_RANGES,
+  drama = 0.5,
+): string {
   if (arcs.length === 0) return "";
 
   const keys = Object.keys(FEATURE_MAP) as (keyof GenerateRanges)[];
@@ -376,6 +380,12 @@ export function arcsToSequence(arcs: ArcSegment[], ranges: GenerateRanges = DEFA
 
   const norm: Record<keyof GenerateRanges, number[]> = {} as never;
   for (const k of keys) norm[k] = normalizeArr(raw[k]);
+
+  // Apply drama contrast curve
+  const dramaScale = drama * 2; // 0→0, 0.5→1 (identity), 1→2
+  for (const k of keys) {
+    norm[k] = norm[k].map((v) => Math.max(0, Math.min(1, 0.5 + (v - 0.5) * dramaScale)));
+  }
   const normCentroid = normalizeArr(rawCentroid);
   const normRms = normalizeArr(rawRms);
 
