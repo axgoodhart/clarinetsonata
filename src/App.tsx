@@ -128,6 +128,7 @@ export default function App() {
     JSON.parse(JSON.stringify(DEFAULT_RANGES)),
   );
   const [genSensitivity, setGenSensitivity] = useState(0.5);
+  const [genDrama, setGenDrama] = useState(0.5);
 
   // Lifted state for segment selection (shared between editor + waveform)
   const [selectedSegmentIdx, setSelectedSegmentIdx] = useState(0);
@@ -712,26 +713,43 @@ export default function App() {
             </div>
 
             <div className="gen-modal-body">
-              {/* Sensitivity */}
-              <div className="gen-row">
-                <label className="gen-label">sensitivity</label>
-                <div className="gen-slider-row">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={genSensitivity}
-                    onChange={(e) =>
-                      setGenSensitivity(parseFloat(e.target.value))
-                    }
-                    className="gen-slider"
+              {/* XY Pad: Frequency × Drama */}
+              <div className="gen-xy-wrap">
+                <div
+                  className="gen-xy-pad"
+                  onPointerDown={(e) => {
+                    const pad = e.currentTarget;
+                    const rect = pad.getBoundingClientRect();
+                    const update = (px: number, py: number) => {
+                      const x = Math.max(0, Math.min(1, (px - rect.left) / rect.width));
+                      const y = Math.max(0, Math.min(1, 1 - (py - rect.top) / rect.height));
+                      setGenSensitivity(x);
+                      setGenDrama(y);
+                    };
+                    update(e.clientX, e.clientY);
+                    const onMove = (ev: PointerEvent) => update(ev.clientX, ev.clientY);
+                    const onUp = () => {
+                      window.removeEventListener("pointermove", onMove);
+                      window.removeEventListener("pointerup", onUp);
+                    };
+                    window.addEventListener("pointermove", onMove);
+                    window.addEventListener("pointerup", onUp);
+                  }}
+                >
+                  <div
+                    className="gen-xy-dot"
+                    style={{
+                      left: `${genSensitivity * 100}%`,
+                      top: `${(1 - genDrama) * 100}%`,
+                    }}
                   />
-                  <span className="gen-val">
-                    {genSensitivity.toFixed(2)}
-                  </span>
+                  <span className="gen-xy-axis-label gen-xy-axis-x">frequency</span>
+                  <span className="gen-xy-axis-label gen-xy-axis-y">drama</span>
                 </div>
-                <span className="gen-hint">more boundaries &rarr;</span>
+                <div className="gen-xy-labels">
+                  <span className="gen-xy-label">freq {genSensitivity.toFixed(2)}</span>
+                  <span className="gen-xy-label">drama {genDrama.toFixed(2)}</span>
+                </div>
               </div>
 
               <div className="gen-divider" />
@@ -793,6 +811,7 @@ export default function App() {
                 onClick={() => {
                   setGenRanges(JSON.parse(JSON.stringify(DEFAULT_RANGES)));
                   setGenSensitivity(0.5);
+                  setGenDrama(0.5);
                 }}
                 className="gen-btn gen-btn-reset"
               >
