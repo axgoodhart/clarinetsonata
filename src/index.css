@@ -898,11 +898,13 @@ h3 a {
   display: flex;
   justify-content: space-between;
   width: 160px;
+  user-select:none;
 }
 
 .gen-xy-label {
   font-family: "SF Mono", "Fira Code", monospace;
   font-size: 9px;
+  user-select:none;
   letter-spacing: 0.1em;
   color: #475569;
 }
@@ -912,6 +914,7 @@ h3 a {
   font-size: 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  user-select:none;
   color: #334155;
   position: absolute;
 }
@@ -1430,4 +1433,32 @@ h3 a {
 }
 .note-delete:hover {
   color: #ef4444;
+}
+
+/* Note entry mode */
+.note-markers.entry-mode {
+  cursor: crosshair;
+  background: rgba(244, 114, 182, 0.06);
+  border-radius: 4px;
+}
+.waveform-container.note-entry {
+  cursor: crosshair;
+}
+.waveform-container.note-entry canvas {
+  cursor: crosshair;
+}
+.note-entry-badge {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: #f472b6;
+  background: rgba(244, 114, 182, 0.1);
+  border: 1px solid rgba(244, 114, 182, 0.25);
+  border-radius: 4px;
+  padding: 2px 8px;
+  animation: note-entry-pulse 1.5s ease-in-out infinite;
+}
+@keyframes note-entry-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }

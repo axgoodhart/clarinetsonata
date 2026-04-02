@@ -9,6 +9,8 @@ interface WaveformTimelineProps {
   selectedIdx: number;
   onScrub: (time: number) => void;
   onSelectSegment: (idx: number) => void;
+  noteEntryMode?: boolean;
+  onAddNoteAtTime?: (time: number) => void;
 }
 
 const BLOCK_PALETTE = [
@@ -78,6 +80,8 @@ export default function WaveformTimeline({
   selectedIdx,
   onScrub,
   onSelectSegment,
+  noteEntryMode,
+  onAddNoteAtTime,
 }: WaveformTimelineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -266,9 +270,15 @@ export default function WaveformTimeline({
 
     const handleMouseDown = (e: MouseEvent) => {
       e.preventDefault();
-      isDragging.current = true;
-
       const time = getTimeFromEvent(e);
+
+      // In note entry mode, clicks place notes instead of scrubbing
+      if (noteEntryMode && onAddNoteAtTime) {
+        onAddNoteAtTime(time);
+        return;
+      }
+
+      isDragging.current = true;
       onScrub(time);
 
       // Check if click is inside a segment block
@@ -308,10 +318,10 @@ export default function WaveformTimeline({
       window.removeEventListener("mouseup", handleMouseUp);
       cancelAnimationFrame(rafId.current);
     };
-  }, [segments, totalDuration, onScrub, onSelectSegment, xToTime, timeToX]);
+  }, [segments, totalDuration, onScrub, onSelectSegment, xToTime, timeToX, noteEntryMode, onAddNoteAtTime]);
 
   return (
-    <div ref={containerRef} className="waveform-container">
+    <div ref={containerRef} className={`waveform-container${noteEntryMode ? " note-entry" : ""}`}>
       <canvas
         ref={canvasRef}
         className="waveform-canvas"

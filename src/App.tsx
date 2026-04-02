@@ -150,6 +150,10 @@ export default function App() {
   const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
 
+  // Note entry mode (double-spacebar in edit mode)
+  const [noteEntryMode, setNoteEntryMode] = useState(false);
+  const spaceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => { saveNotes(notes); }, [notes]);
 
   // Hitpoint derived state (must be after `notes` declaration)
@@ -186,6 +190,12 @@ export default function App() {
     setNotes((prev) => [...prev, note]);
     setEditingNoteId(note.id);
   }, [playback.currentTime]);
+
+  const addNoteAtTime = useCallback((t: number) => {
+    const note: TimelineNote = { id: notesId(), time: t, text: "" };
+    setNotes((prev) => [...prev, note]);
+    setEditingNoteId(note.id);
+  }, []);
 
   const updateNoteText = useCallback((id: string, text: string) => {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)));
@@ -383,20 +393,80 @@ export default function App() {
     [],
   );
 
-  // Global keyboard shortcut for undo/redo
+  // Global keyboard shortcuts: undo/redo, spacebar play/pause, double-space note entry
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Skip when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
       if (e.metaKey && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
       } else if (e.metaKey && e.shiftKey && e.key === "z") {
         e.preventDefault();
         handleRedo();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        const inEditMode = showEditor || drawMode;
+        if (inEditMode) {
+          // In edit mode: double-spacebar toggles note entry, single = play/pause
+          if (spaceTimerRef.current) {
+            clearTimeout(spaceTimerRef.current);
+            spaceTimerRef.current = null;
+            setNoteEntryMode((v) => !v);
+          } else {
+            spaceTimerRef.current = setTimeout(() => {
+              spaceTimerRef.current = null;
+              actions.toggle();
+            }, 300);
+          }
+        } else {
+          actions.toggle();
+        }
+      } else if (e.key === "Escape") {
+        setNoteEntryMode(false);
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [handleUndo, handleRedo]);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      if (spaceTimerRef.current) clearTimeout(spaceTimerRef.current);
+    };
+  }, [handleUndo, handleRedo, actions, showEditor, drawMode]);
+
+  // Exit note entry mode when leaving edit mode
+  useEffect(() => {
+    if (!showEditor && !drawMode) setNoteEntryMode(false);
+  }, [showEditor, drawMode]);
+
+  // Media Session API for hardware media keys
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const ms = navigator.mediaSession;
+    ms.setActionHandler("play", () => {
+      if (!playback.isPlaying) actions.toggle();
+    });
+    ms.setActionHandler("pause", () => {
+      if (playback.isPlaying) actions.toggle();
+    });
+    ms.setActionHandler("stop", () => {
+      if (playback.isPlaying) actions.toggle();
+    });
+    return () => {
+      ms.setActionHandler("play", null);
+      ms.setActionHandler("pause", null);
+      ms.setActionHandler("stop", null);
+    };
+  }, [actions, playback.isPlaying]);
+
+  useEffect(() => {
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.playbackState = playback.isPlaying
+        ? "playing"
+        : "paused";
+    }
+  }, [playback.isPlaying]);
 
   // Init particle field + engine + default audio (no longer manages animation loop)
   useEffect(() => {
@@ -607,6 +677,8 @@ export default function App() {
               selectedIdx={selectedSegmentIdx}
               onScrub={actions.scrub}
               onSelectSegment={selectSegment}
+              noteEntryMode={noteEntryMode}
+              onAddNoteAtTime={addNoteAtTime}
             />
           ) : (
             <input
@@ -623,7 +695,19 @@ export default function App() {
           )}
           {/* Note markers on timeline */}
           {totalDuration > 0 && (
-            <div className="note-markers">
+            <div
+              className={`note-markers${noteEntryMode ? " entry-mode" : ""}`}
+              onClick={
+                noteEntryMode
+                  ? (e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pct = (e.clientX - rect.left) / rect.width;
+                      const t = pct * totalDuration;
+                      if (t >= 0 && t <= totalDuration) addNoteAtTime(t);
+                    }
+                  : undefined
+              }
+            >
               {notes.map((note) => {
                 const pct = (note.time / totalDuration) * 100;
                 const isOpen = hoveredNoteId === note.id || editingNoteId === note.id;
@@ -700,6 +784,11 @@ export default function App() {
               <button onClick={addNote} className="control-btn">
                 + Note
               </button>
+              {noteEntryMode && (
+                <span className="note-entry-badge">
+                  click timeline to place note
+                </span>
+              )}
               <button
                 onClick={drawMode ? exitDrawMode : enterDrawMode}
                 className={`control-btn${drawMode ? " demo-btn active" : ""}`}

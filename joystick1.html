@@ -323,7 +323,7 @@ $(document).ready(function () {
   });
   $(document).on('mousemove', function (e) {
 
-    mouse.x = e.clientX;
+    mouse.x = e.clientX ;
     mouse.y = e.clientY;
   });
   requestAnimationFrame(animate);
@@ -339,7 +339,14 @@ function animate() {
 }
 
 function updateJoystickPosition() {
+
+
   if (thumb) {
+
+    setTimeout(function () {
+      joy.x= 0;
+      joy.y= 0;
+    })
     joy.x = (mouse.x / win.width - 0.5) * 4;
     joy.y = (mouse.y / win.height - 0.5) * 4;
     if (joy.x > 1)
@@ -355,7 +362,12 @@ function updateJoystickPosition() {
     joy.x = 0;
     joy.y = 0;
   }
+  
+  //log joy values 10x/s
 
+setInterval(() => {
+  console.log(joy.x, joy.y)
+}, 1000);
 }
 
 function updateDotPosition() {
