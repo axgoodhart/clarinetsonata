@@ -8,14 +8,29 @@ export class AudioPlayer {
   private _startedAt = 0;
   private _pausedAt = 0;
   private _isPlaying = false;
+  private _playbackRate = 1.0;
 
   get isPlaying() {
     return this._isPlaying;
   }
 
+  get playbackRate() {
+    return this._playbackRate;
+  }
+
+  set playbackRate(rate: number) {
+    this._playbackRate = rate;
+    if (this.source) {
+      this.source.playbackRate.value = rate;
+      // Re-anchor time tracking
+      this._pausedAt = this.currentTime;
+      this._startedAt = this.audioCtx?.currentTime || 0;
+    }
+  }
+
   get currentTime() {
     if (!this._isPlaying || !this.audioCtx) return this._pausedAt;
-    return this.audioCtx.currentTime - this._startedAt + this._pausedAt;
+    return (this.audioCtx.currentTime - this._startedAt) * this._playbackRate + this._pausedAt;
   }
 
   get duration() {
@@ -75,6 +90,7 @@ export class AudioPlayer {
 
     this.source = this.audioCtx.createBufferSource();
     this.source.buffer = this.buffer;
+    this.source.playbackRate.value = this._playbackRate;
     this.source.connect(this.analyser);
     this.source.start(0, this._pausedAt);
     this._startedAt = this.audioCtx.currentTime;

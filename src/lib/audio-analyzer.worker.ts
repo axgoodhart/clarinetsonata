@@ -230,7 +230,7 @@ function characterizeArc(frames: Frame[], t0: number, t1: number): ArcSegment {
 // ── Worker Message Handler ─────────────────────────────────────────
 
 self.onmessage = (e: MessageEvent) => {
-  const { channelData, sampleRate, duration, sensitivity, forcedBoundaries = [] } = e.data;
+  const { channelData, sampleRate, duration, sensitivity, forcedBoundaries = [], restrictive = false } = e.data;
 
   // Mix to mono from raw channel arrays
   const numChannels = channelData.length;
@@ -251,7 +251,7 @@ self.onmessage = (e: MessageEvent) => {
   const peaks = pickPeaks(smoothed, sensitivity, sampleRate);
 
   // Merge auto-detected peaks with forced boundaries (forced wins within proximity)
-  const autoTimes = peaks.map((p: TextureBoundary) => p.time);
+  const autoTimes = restrictive ? [] : peaks.map((p: TextureBoundary) => p.time);
   const forced = (forcedBoundaries as number[]).filter((t: number) => t > 0 && t < duration);
   const merged = autoTimes.filter(
     (at: number) => !forced.some((ft: number) => Math.abs(at - ft) < FORCED_PROXIMITY),

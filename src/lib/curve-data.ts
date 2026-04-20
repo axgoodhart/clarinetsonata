@@ -14,10 +14,12 @@ export const CURVE_PARAMS = [
 
 export type CurveParamKey = (typeof CURVE_PARAMS)[number]["key"];
 
-export const PALETTE_NAMES = Object.keys(PALETTES);
+/** Defensive getter for palette names to avoid circular init issues */
+export const getPaletteNames = () => Object.keys(PALETTES);
 
 export function paletteColors(idx: number): [string, string] {
-  const name = PALETTE_NAMES[idx % PALETTE_NAMES.length];
+  const names = getPaletteNames();
+  const name = names[idx % names.length];
   return PALETTES[name];
 }
 
@@ -35,6 +37,7 @@ export class CurveStore {
   data: Record<CurveParamKey, Float32Array>;
   driftX: Float32Array;
   driftY: Float32Array;
+  driftMode: Uint8Array; // 0=directional, 1=inward, 2=outward
   paletteIdx: Uint8Array;
   private _duration: number;
   private _resolution: number;
@@ -49,6 +52,7 @@ export class CurveStore {
     }
     this.driftX = new Float32Array(count); // -1 to 1
     this.driftY = new Float32Array(count); // -1 to 1
+    this.driftMode = new Uint8Array(count); // 0=dir
     this.paletteIdx = new Uint8Array(count).fill(1); // default "cool" = index 1
   }
 
@@ -56,6 +60,7 @@ export class CurveStore {
   get resolution() { return this._resolution; }
   get pointCount() { return this.data.density.length; }
   get eventCount() { return this.pointCount * CURVE_PARAMS.length; }
+  get paletteNames() { return getPaletteNames(); }
 
   private timeToIndex(time: number): number {
     return Math.round(Math.max(0, Math.min(time, this._duration)) * this._resolution);
@@ -82,15 +87,16 @@ export class CurveStore {
     this.setValue(param, time, def.min + Math.max(0, Math.min(1, norm)) * (def.max - def.min));
   }
 
-  setDrift(time: number, x: number, y: number): void {
+  setDrift(time: number, x: number, y: number, mode = 0): void {
     const idx = this.timeToIndex(time);
     if (idx >= 0 && idx < this.driftX.length) {
       this.driftX[idx] = Math.max(-1, Math.min(1, x));
       this.driftY[idx] = Math.max(-1, Math.min(1, y));
+      this.driftMode[idx] = mode;
     }
   }
 
-  paintDrift(t0: number, x0: number, y0: number, t1: number, x1: number, y1: number): void {
+  paintDrift(t0: number, x0: number, y0: number, t1: number, x1: number, y1: number, mode = 0): void {
     const i0 = this.timeToIndex(t0);
     const i1 = this.timeToIndex(t1);
     const start = Math.max(0, Math.min(i0, i1));
@@ -99,18 +105,20 @@ export class CurveStore {
       const t = end === start ? 1 : (i - i0) / (i1 - i0);
       this.driftX[i] = Math.max(-1, Math.min(1, x0 + (x1 - x0) * t));
       this.driftY[i] = Math.max(-1, Math.min(1, y0 + (y1 - y0) * t));
+      this.driftMode[i] = mode;
     }
   }
 
-  getDrift(time: number): { x: number; y: number } {
+  getDrift(time: number): { x: number; y: number; mode: number } {
     const idx = Math.min(this.timeToIndex(time), this.driftX.length - 1);
-    return { x: this.driftX[idx], y: this.driftY[idx] };
+    return { x: this.driftX[idx], y: this.driftY[idx], mode: this.driftMode[idx] };
   }
 
   setPalette(time: number, idx: number): void {
     const i = this.timeToIndex(time);
+    const names = getPaletteNames();
     if (i >= 0 && i < this.paletteIdx.length) {
-      this.paletteIdx[i] = idx % PALETTE_NAMES.length;
+      this.paletteIdx[i] = idx % names.length;
     }
   }
 
@@ -144,6 +152,7 @@ export class CurveStore {
       const speed = Math.sqrt(dx * dx + dy * dy);
       const angle = Math.atan2(dy, dx);
       const pal = paletteColors(this.paletteIdx[i]);
+      const mode = this.driftMode[i];
       const state: Partial<FieldState> = {
         density: this.data.density[i],
         connect: this.data.connect[i],
@@ -154,7 +163,7 @@ export class CurveStore {
         opacity: this.data.opacity[i],
         driftAngle: angle,
         driftSpeed: speed * 2.5,
-        driftMode: "directional",
+        driftMode: mode === 1 ? "inward" : mode === 2 ? "outward" : "directional",
         paletteA: pal[0],
         paletteB: pal[1],
       };
@@ -163,9 +172,11 @@ export class CurveStore {
     return kf;
   }
 
-  private driftToDSL(dx: number, dy: number): string {
+  private driftToDSL(dx: number, dy: number, mode: number): string {
     const speed = Math.sqrt(dx * dx + dy * dy);
-    if (speed < 0.05) return "still, 0.001";
+    if (speed < 0.05 && mode === 0) return "still, 0.001";
+    if (mode === 1) return `inward, ${(speed * 2.5).toFixed(2)}`;
+    if (mode === 2) return `outward, ${(speed * 2.5).toFixed(2)}`;
     const angle = Math.atan2(dy, dx);
     const dir = angleToDirName(angle);
     return `${dir}, ${(speed * 2.5).toFixed(2)}`;
@@ -175,14 +186,15 @@ export class CurveStore {
     const lines: string[] = [""];
     const count = this.pointCount;
     const step = 1 / this._resolution;
+    const names = getPaletteNames();
     for (let i = 0; i < count - 1; i++) {
       const t0 = i * step;
       const t1 = (i + 1) * step;
       const f = (v: number) => v.toFixed(3);
-      const d0 = this.driftToDSL(this.driftX[i], this.driftY[i]);
-      const d1 = this.driftToDSL(this.driftX[i + 1], this.driftY[i + 1]);
-      const p0 = PALETTE_NAMES[this.paletteIdx[i]];
-      const p1 = PALETTE_NAMES[this.paletteIdx[i + 1]];
+      const d0 = this.driftToDSL(this.driftX[i], this.driftY[i], this.driftMode[i]);
+      const d1 = this.driftToDSL(this.driftX[i + 1], this.driftY[i + 1], this.driftMode[i + 1]);
+      const p0 = names[this.paletteIdx[i]];
+      const p1 = names[this.paletteIdx[i + 1]];
       lines.push(`density(${f(this.data.density[i])} | ${f(this.data.density[i + 1])})`);
       lines.push(`connect(${f(this.data.connect[i])} | ${f(this.data.connect[i + 1])})`);
       lines.push(`drift(${d0} | ${d1})`);
@@ -214,6 +226,8 @@ export class CurveStore {
       const spd = Math.min(1, s.driftSpeed / 2.5);
       store.driftX[i] = Math.cos(s.driftAngle) * spd;
       store.driftY[i] = Math.sin(s.driftAngle) * spd;
+      // Convert mode back to index
+      store.driftMode[i] = s.driftMode === "inward" ? 1 : s.driftMode === "outward" ? 2 : 0;
       // Match palette to nearest named palette
       store.paletteIdx[i] = matchPalette(s.paletteA, s.paletteB);
     }
@@ -238,8 +252,9 @@ function angleToDirName(angle: number): string {
 function matchPalette(a: string, b: string): number {
   const al = a.toLowerCase();
   const bl = b.toLowerCase();
-  for (let i = 0; i < PALETTE_NAMES.length; i++) {
-    const [pa, pb] = PALETTES[PALETTE_NAMES[i]];
+  const names = getPaletteNames();
+  for (let i = 0; i < names.length; i++) {
+    const [pa, pb] = PALETTES[names[i]];
     if (pa.toLowerCase() === al && pb.toLowerCase() === bl) return i;
   }
   return 1; // default "cool"

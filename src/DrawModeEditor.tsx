@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { CurveStore, CURVE_PARAMS, PALETTE_NAMES, paletteColors, type CurveParamKey } from "./lib/curve-data";
+import { CurveStore, CURVE_PARAMS, paletteColors, type CurveParamKey } from "./lib/curve-data";
 import { ParticleField } from "./lib/particle-field-gl";
 import { SequenceEngine } from "./lib/sequence-engine";
 import { useFrame } from "./hooks/useFrame";
@@ -28,16 +28,28 @@ export default function DrawModeEditor({
   const isDrawing = useRef(false);
   const lastDrawPoint = useRef<{ time: number; norm: number } | null>(null);
 
-  const selectParam = useCallback((key: CurveParamKey) => {
-    activeParamRef.current = key;
-    setActiveParam(key);
-  }, []);
+  // Palette state
+  const [currentPalette, setCurrentPalette] = useState(() => curves.getPalette(currentTime));
 
   // Joystick state
   const [joyActive, setJoyActive] = useState(false);
   const [joyPos, setJoyPos] = useState({ x: 0, y: 0 });
   const joyRef = useRef<HTMLDivElement>(null);
   const joyPosRef = useRef({ x: 0, y: 0 });
+
+  // Performance Capture State
+  const [convergence, setConvergence] = useState(3); // 1-5 scale
+  const [revision, setRevision] = useState(0);
+  const [glyphs, setGlyphs] = useState<{ id: string; x: number; y: number; angle: number }[]>([]);
+
+  const TARGET_STEPS = 40;
+  const STRIP_GAP = totalDuration / TARGET_STEPS;
+  const numSteps = TARGET_STEPS;
+
+  const selectParam = useCallback((key: CurveParamKey) => {
+    activeParamRef.current = key;
+    setActiveParam(key);
+  }, []);
 
   const handleJoyDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -61,30 +73,75 @@ export default function DrawModeEditor({
     if (dist > 1) { dx /= dist; dy /= dist; }
     joyPosRef.current = { x: dx, y: dy };
     setJoyPos({ x: dx, y: dy });
-  }, [joyActive]);
+
+    // Performance Recording (Full High-Res Data)
+    const angle = Math.atan2(dy, dx);
+    const time = currentTime;
+
+    // Map 1-5 to engine mode (0=dir, 1=in, 2=out)
+    const mode = convergence <= 2 ? 1 : convergence >= 4 ? 2 : 0;
+    curves.setDrift(time, dx, dy, mode);
+    curves.setPalette(time, currentPalette);
+    
+    // Notify system and force UI refresh for sampled strip
+    onCurvesChanged();
+    setRevision(r => r + 1);
+
+    // Spawn visual "treat"
+    if (Math.random() > 0.75) {
+      const id = Math.random().toString(36).substring(7);
+      setGlyphs(prev => [...prev, { id, x: e.clientX - rect.left, y: e.clientY - rect.top, angle }]);
+      setTimeout(() => setGlyphs(prev => prev.filter(g => g.id !== id)), 800);
+    }
+  }, [joyActive, currentTime, currentPalette, convergence, curves, onCurvesChanged]);
 
   const handleJoyUp = useCallback(() => {
+    const { x, y } = joyPosRef.current;
+
+    // If we were performing, paint a "momentum" tail into the future
+    if (Math.sqrt(x * x + y * y) > 0.01) {
+      const tailDuration = STRIP_GAP * 2; // 2 arrows worth of time
+      curves.paintDrift(currentTime, x, y, currentTime + tailDuration, 0, 0);
+      onCurvesChanged();
+      setRevision((r) => r + 1);
+    }
+
     setJoyActive(false);
     joyPosRef.current = { x: 0, y: 0 };
     setJoyPos({ x: 0, y: 0 });
-  }, []);
+  }, [curves, currentTime, onCurvesChanged, STRIP_GAP]);
 
-  // Palette state
-  const [currentPalette, setCurrentPalette] = useState(() => curves.getPalette(currentTime));
+  // Sync palette with keyboard 1-9
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
 
-  const cyclePalette = useCallback((dir: number) => {
-    setCurrentPalette((prev) => {
-      const next = (prev + dir + PALETTE_NAMES.length) % PALETTE_NAMES.length;
-      return next;
-    });
-  }, []);
+      if (e.key === "Tab") {
+        e.preventDefault();
+        setConvergence(prev => e.shiftKey ? Math.max(1, prev - 1) : Math.min(5, prev + 1));
+        return;
+      }
+
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 9) {
+        setCurrentPalette(num - 1);
+        curves.setPalette(currentTime, num - 1);
+        onCurvesChanged();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [currentTime, curves, onCurvesChanged]);
 
   // When drawing on the curve graph, also record current drift + palette
   const recordDriftAndPalette = useCallback((time: number) => {
     const jp = joyPosRef.current;
-    curves.setDrift(time, jp.x, jp.y);
+    // Map 1-5 to engine mode (0=dir, 1=in, 2=out)
+    const mode = convergence <= 2 ? 1 : convergence >= 4 ? 2 : 0;
+    curves.setDrift(time, jp.x, jp.y, mode);
     curves.setPalette(time, currentPalette);
-  }, [curves, currentPalette]);
+  }, [curves, currentPalette, convergence]);
 
   // Init preview field
   useEffect(() => {
@@ -96,7 +153,7 @@ export default function DrawModeEditor({
     previewEngineRef.current = engine;
     engine.load(curves.toKeyframes());
     return () => { previewFieldRef.current = null; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [curves]);
 
   // Update preview engine when curves change
   const syncPreview = useCallback(() => {
@@ -135,7 +192,7 @@ export default function DrawModeEditor({
     [getGraphRect, totalDuration],
   );
 
-  // Drawing handlers — use activeParamRef to avoid stale closures
+  // Drawing handlers
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
@@ -160,7 +217,9 @@ export default function DrawModeEditor({
         curves.paintNormalized(activeParamRef.current, prev.time, prev.norm, pt.time, pt.norm);
         // Also paint drift between points
         const jp = joyPosRef.current;
-        curves.paintDrift(prev.time, jp.x, jp.y, pt.time, jp.x, jp.y);
+        // Map 1-5 to engine mode (0=dir, 1=in, 2=out)
+        const mode = convergence <= 2 ? 1 : convergence >= 4 ? 2 : 0;
+        curves.paintDrift(prev.time, jp.x, jp.y, pt.time, jp.x, jp.y, mode);
       } else {
         curves.setNormalized(activeParamRef.current, pt.time, pt.norm);
       }
@@ -169,7 +228,7 @@ export default function DrawModeEditor({
       onCurvesChanged();
       syncPreview();
     },
-    [curves, onCurvesChanged, posToTimeNorm, syncPreview, recordDriftAndPalette],
+    [curves, onCurvesChanged, posToTimeNorm, syncPreview, recordDriftAndPalette, convergence],
   );
 
   const handlePointerUp = useCallback(() => {
@@ -196,7 +255,7 @@ export default function DrawModeEditor({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Background
-    ctx.fillStyle = "rgba(3, 7, 18, 0.95)";
+    ctx.fillStyle = "rgba(3, 7, 18, 0.0)";
     ctx.fillRect(0, 0, w, h);
 
     // Grid lines
@@ -209,7 +268,7 @@ export default function DrawModeEditor({
       ctx.lineTo(w, y);
       ctx.stroke();
     }
-    // Vertical time grid (every 30s)
+    // Vertical time grid
     if (totalDuration > 0) {
       const step = totalDuration > 120 ? 30 : totalDuration > 30 ? 10 : 5;
       for (let t = step; t < totalDuration; t += step) {
@@ -225,17 +284,16 @@ export default function DrawModeEditor({
     for (const paramDef of CURVE_PARAMS) {
       const isActive = paramDef.key === activeParam;
       const arr = curves.data[paramDef.key];
-      const pDef = paramDef;
-      const range = pDef.max - pDef.min;
+      const range = paramDef.max - paramDef.min;
 
-      ctx.strokeStyle = isActive ? pDef.color : pDef.color + "30";
+      ctx.strokeStyle = isActive ? paramDef.color : paramDef.color + "30";
       ctx.lineWidth = isActive ? 2.5 : 1;
       ctx.setLineDash(isActive ? [] : [3, 4]);
 
       ctx.beginPath();
       for (let i = 0; i < arr.length; i++) {
         const x = (i / (arr.length - 1)) * w;
-        const norm = (arr[i] - pDef.min) / range;
+        const norm = (arr[i] - paramDef.min) / range;
         const y = (1 - norm) * h;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -243,13 +301,12 @@ export default function DrawModeEditor({
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Dot markers for active param
       if (isActive) {
         const dotStep = Math.max(1, Math.floor(arr.length / 80));
-        ctx.fillStyle = pDef.color;
+        ctx.fillStyle = paramDef.color;
         for (let i = 0; i < arr.length; i += dotStep) {
           const x = (i / (arr.length - 1)) * w;
-          const norm = (arr[i] - pDef.min) / range;
+          const norm = (arr[i] - paramDef.min) / range;
           const y = (1 - norm) * h;
           ctx.beginPath();
           ctx.arc(x, y, 2.5, 0, Math.PI * 2);
@@ -261,8 +318,6 @@ export default function DrawModeEditor({
     // Playhead
     if (totalDuration > 0) {
       const px = (currentTime / totalDuration) * w;
-
-      // Vertical line
       ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -270,13 +325,11 @@ export default function DrawModeEditor({
       ctx.lineTo(px, h);
       ctx.stroke();
 
-      // Glowing orb on active curve
       const activeDef = CURVE_PARAMS.find((p) => p.key === activeParam)!;
       const val = curves.getValue(activeParam, currentTime);
       const norm = (val - activeDef.min) / (activeDef.max - activeDef.min);
       const orbY = (1 - norm) * h;
 
-      // Outer glow
       const grad = ctx.createRadialGradient(px, orbY, 0, px, orbY, 18);
       grad.addColorStop(0, activeDef.color + "aa");
       grad.addColorStop(0.5, activeDef.color + "33");
@@ -286,13 +339,11 @@ export default function DrawModeEditor({
       ctx.arc(px, orbY, 18, 0, Math.PI * 2);
       ctx.fill();
 
-      // Inner orb
       ctx.fillStyle = activeDef.color;
       ctx.beginPath();
       ctx.arc(px, orbY, 5, 0, Math.PI * 2);
       ctx.fill();
 
-      // White ring
       ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -313,7 +364,6 @@ export default function DrawModeEditor({
 
   return (
     <div className="draw-mode">
-      {/* Left panel — parameter selector */}
       <div className="draw-param-panel">
         <div className="draw-mode-label">DRAW MODE</div>
         <div className="draw-param-list">
@@ -336,47 +386,52 @@ export default function DrawModeEditor({
           })}
         </div>
 
-        {/* Palette picker */}
-        <div className="draw-palette-picker">
-          <span className="draw-palette-label">Palette</span>
-          <div className="draw-palette-row">
-            <button className="draw-palette-arrow" onClick={() => cyclePalette(-1)}>&lt;</button>
-            <div className="draw-palette-swatch">
-              <div style={{ background: paletteColors(currentPalette)[0] }} />
-              <div style={{ background: paletteColors(currentPalette)[1] }} />
-            </div>
-            <span className="draw-palette-name">{PALETTE_NAMES[currentPalette]}</span>
-            <button className="draw-palette-arrow" onClick={() => cyclePalette(1)}>&gt;</button>
+        <div className="draw-palette-grid">
+          <div className="palette-row">
+            {[5, 6, 7, 8].map((i) => (
+              <div key={i} className="palette-item">
+                <div
+                  className={`palette-swatch-mini${currentPalette === i ? " active" : ""}`}
+                  style={{ background: paletteColors(i)[0] }}
+                  onClick={() => setCurrentPalette(i)}
+                />
+                <span className="palette-label-mini">{i + 1}</span>
+              </div>
+            ))}
+          </div>
+          <div className="palette-row">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="palette-item">
+                <div
+                  className={`palette-swatch-mini${currentPalette === i ? " active" : ""}`}
+                  style={{ background: paletteColors(i)[0] }}
+                  onClick={() => setCurrentPalette(i)}
+                />
+                <span className="palette-label-mini">{i + 1}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Joystick (sidebar preview — small) */}
-        {!joyActive && (
-          <div className="draw-joy-sidebar">
-            <span className="draw-joy-label">Drift</span>
-            <div
-              className="draw-joy-pad"
-              ref={joyRef}
-              onPointerDown={handleJoyDown}
-              onPointerMove={handleJoyMove}
-              onPointerUp={handleJoyUp}
+        <div className="drift-module-sidebar">
+          <div className="convergence-wrap">
+            <div 
+              className={`convergence-dots${convergence !== 3 ? " active" : ""}`}
+              style={{ 
+                letterSpacing: `${(convergence - 1) * 5}px`,
+                paddingLeft: `${(convergence - 1) * 5}px` 
+              }}
             >
-              <div className="draw-joy-ring" />
-              <div
-                className="draw-joy-knob"
-                style={{ transform: `translate(${joyPos.x * 30}px, ${joyPos.y * 30}px)` }}
-              />
+              • • •
+            </div>
+            <div className="speed-box-mini">
+              {Math.sqrt(joyPos.x ** 2 + joyPos.y ** 2).toFixed(1)}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Floating joystick — center bottom when active */}
-      {joyActive && (
-        <div className="draw-joy-float">
           <div
-            className="draw-joy-pad large"
+            className="draw-joy-pad"
             ref={joyRef}
+            style={{ borderColor: paletteColors(currentPalette)[1] + "33" }}
             onPointerDown={handleJoyDown}
             onPointerMove={handleJoyMove}
             onPointerUp={handleJoyUp}
@@ -384,16 +439,32 @@ export default function DrawModeEditor({
             <div className="draw-joy-ring" />
             <div
               className="draw-joy-knob"
-              style={{ transform: `translate(${joyPos.x * 60}px, ${joyPos.y * 60}px)` }}
+              style={{
+                left: `calc(${50 + joyPos.x * 50}% - 10px)`,
+                top: `calc(${50 + joyPos.y * 50}% - 10px)`,
+                background: paletteColors(currentPalette)[1],
+                boxShadow: `0 0 10px ${paletteColors(currentPalette)[1]}`,
+              }}
             />
-            <span className="draw-joy-speed">{(Math.sqrt(joyPos.x ** 2 + joyPos.y ** 2) * 100).toFixed(0)}%</span>
+            {glyphs.map((g) => (
+              <div
+                key={g.id}
+                className="drift-glyph"
+                style={{
+                  left: g.x,
+                  top: g.y,
+                  transform: `translate(-50%, -50%) rotate(${g.angle + Math.PI / 2}rad)`,
+                  color: paletteColors(currentPalette)[1],
+                }}
+              >
+                ↑
+              </div>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Center area */}
       <div className="draw-center">
-        {/* Preview window */}
         <div className="draw-preview-wrap">
           <span className="draw-preview-label">Preview</span>
           <div className="draw-preview">
@@ -401,13 +472,11 @@ export default function DrawModeEditor({
           </div>
         </div>
 
-        {/* Stats */}
         <div className="draw-stats">
           <span>{curves.eventCount} events</span>
           <span>parameter resolution: {curves.resolution}/s</span>
         </div>
 
-        {/* Curve graph */}
         <div className="draw-graph-wrap" ref={graphContainerRef}>
           <canvas
             ref={graphCanvasRef}
@@ -417,16 +486,45 @@ export default function DrawModeEditor({
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
           />
-          {/* Y-axis labels */}
-          <span
-            className="draw-axis-label draw-axis-high"
-            style={{ color: activeDef.color }}
-          >
+          <span className="draw-axis-label draw-axis-high" style={{ color: activeDef.color }}>
             {activeDef.label} <span style={{ opacity: 0.5 }}>HIGH</span>
           </span>
           <span className="draw-axis-label draw-axis-low" style={{ color: activeDef.color, opacity: 0.5 }}>
             LOW
           </span>
+        </div>
+
+        <div className="drift-strip-center" data-rev={revision}>
+          <div className="drift-strip-bar">
+            {Array.from({ length: numSteps }).map((_, i) => {
+              const t = i * STRIP_GAP;
+              const drift = curves.getDrift(t);
+              const pal = curves.getPalette(t);
+              const angle = Math.atan2(drift.y, drift.x);
+              const mag = Math.sqrt(drift.x * drift.x + drift.y * drift.y);
+              const hasData = mag > 0.01;
+              const symbol = drift.mode === 1 ? "􀅋" : drift.mode === 2 ? "􀅊" : "↑";
+              const rotation = drift.mode === 0 ? `${angle + Math.PI / 2}rad` : "0rad";
+
+              return (
+                <div key={i} className="drift-step" style={{ opacity: hasData ? (mag * 0.8 + 0.2) : 0.1 }}>
+                  <div
+                    className="drift-step-arrow"
+                    style={{
+                      transform: `rotate(${rotation}) scale(${0.5 + mag * 0.5})`,
+                      color: hasData ? paletteColors(pal)[1] : "#1e293b",
+                    }}
+                  >
+                    {symbol}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="drift-strip-hint">
+            MOVE JOYSTICK TO ADD A DRIFT POINT<br />
+            CHANGE COLOR WITH NUMBER KEYS — DATA RECORDED AT CURRENT PLACE OR THROUGH PLAYBACK
+          </div>
         </div>
       </div>
     </div>

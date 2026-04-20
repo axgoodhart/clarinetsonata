@@ -65,6 +65,7 @@ export function analyzeAudio(
   buffer: AudioBuffer,
   sensitivity = 0.5,
   forcedBoundaries: number[] = [],
+  restrictive = false,
 ): { boundaries: TextureBoundary[]; arcs: ArcSegment[] } {
   const mono = mixToMono(buffer);
   const sr = buffer.sampleRate;
@@ -75,7 +76,7 @@ export function analyzeAudio(
   const peaks = pickPeaks(smoothed, sensitivity, sr);
 
   // Merge auto-detected peaks with forced boundaries (forced wins within proximity)
-  const autoTimes = peaks.map((p) => p.time);
+  const autoTimes = restrictive ? [] : peaks.map((p) => p.time);
   const forced = forcedBoundaries.filter((t) => t > 0 && t < buffer.duration);
   const merged = autoTimes.filter(
     (at) => !forced.some((ft) => Math.abs(at - ft) < FORCED_PROXIMITY),
@@ -108,6 +109,7 @@ export function analyzeAudioAsync(
   buffer: AudioBuffer,
   sensitivity = 0.5,
   forcedBoundaries: number[] = [],
+  restrictive = false,
 ): Promise<{ boundaries: TextureBoundary[]; arcs: ArcSegment[] }> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
@@ -132,7 +134,14 @@ export function analyzeAudioAsync(
     };
 
     worker.postMessage(
-      { channelData, sampleRate: buffer.sampleRate, duration: buffer.duration, sensitivity, forcedBoundaries },
+      {
+        channelData,
+        sampleRate: buffer.sampleRate,
+        duration: buffer.duration,
+        sensitivity,
+        forcedBoundaries,
+        restrictive,
+      },
       channelData.map((c) => c.buffer),
     );
   });

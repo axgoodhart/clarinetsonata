@@ -35,7 +35,7 @@ export const DEFAULT_STATE: FieldState = {
 };
 
 export const PALETTES: Record<string, [string, string]> = {
-  cold: ["#ffffff", "#000000"],
+  cold: ["#ffffff", "#084027"],
   cool: ["#60a5fa", "#a78bfa"],
   warm: ["#f59e0b", "#ef4444"],
   mono: ["#94a3b8", "#e2e8f0"],

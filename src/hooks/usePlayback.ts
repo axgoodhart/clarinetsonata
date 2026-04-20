@@ -15,6 +15,7 @@ export interface PlaybackState {
   audioDuration: number;
   audioBuffer: AudioBuffer | null;
   currentTime: number;
+  playbackRate: number;
 }
 
 export interface PlaybackActions {
@@ -30,6 +31,7 @@ export interface PlaybackActions {
   isAudioPlaying: () => boolean;
   /** Called every frame to update DOM time display and throttled React state */
   updateTime: () => void;
+  setPlaybackRate: (rate: number) => void;
 }
 
 export interface PlaybackRefs {
@@ -52,6 +54,7 @@ export function usePlayback(): [PlaybackState, PlaybackActions, PlaybackRefs] {
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playbackRate, setPlaybackRateState] = useState(1.0);
 
   // Ensure AudioPlayer exists
   const getAudio = useCallback(() => {
@@ -177,6 +180,14 @@ export function usePlayback(): [PlaybackState, PlaybackActions, PlaybackRefs] {
     [],
   );
 
+  const setPlaybackRate = useCallback((rate: number) => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = rate;
+      setPlaybackRateState(rate);
+    }
+  }, []);
+
   const actions: PlaybackActions = {
     start,
     toggle,
@@ -187,6 +198,7 @@ export function usePlayback(): [PlaybackState, PlaybackActions, PlaybackRefs] {
     getCurrentTime,
     isAudioPlaying,
     updateTime,
+    setPlaybackRate,
   };
 
   const state: PlaybackState = {
@@ -195,6 +207,7 @@ export function usePlayback(): [PlaybackState, PlaybackActions, PlaybackRefs] {
     audioDuration,
     audioBuffer,
     currentTime,
+    playbackRate,
   };
 
   return [state, actions, { timeDisplayRef, scrubRef }];

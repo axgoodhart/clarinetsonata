@@ -43,6 +43,9 @@ export default function SegmentEditor({
 }: SegmentEditorProps) {
   const [mode, setMode] = useState<EditorMode>("sliders");
   const [headerHeld, setHeaderHeld] = useState(false);
+  const [isOpaque, setIsOpaque] = useState(false);
+  const [isTucked, setIsTucked] = useState(false);
+  const [isHoveringNum, setIsHoveringNum] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Release header hold on mouseup anywhere
@@ -141,212 +144,271 @@ export default function SegmentEditor({
 
   const fmt = (v: number) => String(Math.round(v * 1000) / 1000);
 
-  if (segments.length === 0) {
-    return (
-      <div className="seg-editor-wrap">
-        <div className="seg-editor-panel">
-          <textarea
-            className={`seq-editor full${editorError ? " seq-editor-error" : ""}`}
-            value={sequenceText}
-            onChange={(e) => onSequenceEdit(e.target.value)}
-            spellCheck={false}
-          />
-        </div>
-      </div>
-    );
-  }
+  const deleteSegment = useCallback(() => {
+    const segs = parseSegments(sequenceText);
+    if (segs.length <= 1) return;
+
+    const deleted = segs[safeIdx];
+    const isLast = safeIdx === segs.length - 1;
+
+    segs.splice(safeIdx, 1);
+
+    if (isLast) {
+      // If we deleted the last one, expand the new last one forward to the old end
+      segs[segs.length - 1].endTime = deleted.endTime;
+    } else {
+      // Expand the next segment backward to the deleted segment's start
+      segs[safeIdx].startTime = deleted.startTime;
+    }
+
+    onSelectSegment(Math.max(0, safeIdx - 1));
+    onSequenceEdit(serializeSegments(segs));
+    setIsHoveringNum(false);
+  }, [sequenceText, safeIdx, onSelectSegment, onSequenceEdit]);
 
   return (
-    <div className="seg-editor-wrap">
-      <div
-        ref={panelRef}
-        className={`seg-editor-panel${headerHeld ? " dragging" : ""}`}
-      >
-        {/* Segment selector strip */}
-        <div className="seg-strip">
-          {segments.map((seg, i) => (
-            <button
-              key={i}
-              className={`seg-chip${i === safeIdx ? " active" : ""}`}
-              style={{ "--chip-color": CHIP_COLORS[i % CHIP_COLORS.length] } as React.CSSProperties}
-              onClick={() => onSelectSegment(i)}
-            >
-              <span className="seg-chip-num">#{i + 1}</span>
-              <span className="seg-chip-time">
-                {fmt(seg.startTime)}–{fmt(seg.endTime)}s
-              </span>
-            </button>
-          ))}
+    <>
+      {isTucked && (
+        <div className="seg-unhide-tab" onClick={() => setIsTucked(false)}>
+          »
         </div>
-
-        {/* Header with editable times */}
-        {selected && (
-          <div className="seg-header" onMouseDown={() => setHeaderHeld(true)}>
-            <span className="seg-header-num">#{safeIdx + 1}</span>
-            <div className="seg-time-inputs">
-              <input
-                type="number"
-                className="seg-time-input"
-                value={selected.startTime}
-                step={0.1}
-                min={0}
-                onChange={(e) => updateTime("startTime", parseFloat(e.target.value) || 0)}
-              />
-              <span className="seg-time-arrow">→</span>
-              <input
-                type="number"
-                className="seg-time-input"
-                value={selected.endTime}
-                step={0.1}
-                min={0}
-                onChange={(e) => updateTime("endTime", parseFloat(e.target.value) || 0)}
-              />
-              <span className="seg-time-unit">s</span>
+      )}
+      <div
+        className="seg-editor-wrap"
+        style={{
+          left: isTucked ? "-500px" : "3%",
+          transition: "left 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        <div
+          ref={panelRef}
+          className={`seg-editor-panel${headerHeld ? " dragging" : ""}`}
+          style={{
+            opacity: isOpaque ? 0.2 : 1,
+            transition: "opacity 0.2s ease",
+          }}
+        >
+          {/* Segment selector strip */}
+          <div id="segToggler">
+            <div
+              id="segOpaque"
+              className={isOpaque ? "active" : ""}
+              onClick={() => setIsOpaque((v) => !v)}
+            >
+              ◎
             </div>
-            {selected.name && (
-              <span className="seg-header-name">{selected.name}</span>
-            )}
+            <div id="segHide" onClick={() => setIsTucked(true)}>
+              «
+            </div>
           </div>
-        )}
 
-        {/* Content area */}
-        {mode === "text" ? (
-          <div className="seg-text-mode">
+          {segments.length === 0 ? (
             <textarea
               className={`seq-editor full${editorError ? " seq-editor-error" : ""}`}
               value={sequenceText}
               onChange={(e) => onSequenceEdit(e.target.value)}
               spellCheck={false}
+              placeholder="No segments found..."
             />
-            <button className="seg-mode-toggle" onClick={() => setMode("sliders")}>
-              switch to sliders
-            </button>
-          </div>
-        ) : (
-          <div className="seg-slider-mode">
-            {/* Column headers */}
-            <div className="seg-col-headers">
-              <span>START</span>
-              <span>END</span>
-            </div>
-
-            {/* Numeric param rows */}
-            {NUMERIC_PARAMS.map((def) => {
-              const val = selected.params[def.key];
-              return (
-                <div className="seg-param-row" key={def.key}>
-                  <label className="seg-param-label">{def.key}</label>
-                  <div className="seg-param-values">
-                    <span className="seg-val start">{fmt(val.a)}</span>
-                    <span className="seg-val end">{fmt(val.b)}</span>
-                  </div>
-                  <div className="seg-sliders">
-                    <input
-                      type="range"
-                      className="seg-slider start"
-                      min={def.min}
-                      max={def.max}
-                      step={def.step}
-                      value={val.a}
-                      onChange={(e) =>
-                        updateNumeric(def.key, "a", parseFloat(e.target.value))
-                      }
-                    />
-                    <input
-                      type="range"
-                      className="seg-slider end"
-                      min={def.min}
-                      max={def.max}
-                      step={def.step}
-                      value={val.b}
-                      onChange={(e) =>
-                        updateNumeric(def.key, "b", parseFloat(e.target.value))
-                      }
-                    />
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Drift row */}
-            <div className="seg-param-row">
-              <label className="seg-param-label">drift</label>
-              <div className="seg-drift-controls">
-                <div className="seg-drift-side">
-                  <select
-                    className="seg-select"
-                    value={selected.params.drift.dirA}
-                    onChange={(e) => updateDrift("dirA", e.target.value)}
+          ) : (
+            <>
+              <div className="seg-strip">
+                {segments.map((seg, i) => (
+                  <button
+                    key={i}
+                    className={`seg-chip${i === safeIdx ? " active" : ""}`}
+                    style={{ "--chip-color": CHIP_COLORS[i % CHIP_COLORS.length] } as React.CSSProperties}
+                    onClick={() => onSelectSegment(i)}
                   >
-                    {DIRECTIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                  <select
-                    className="seg-select"
-                    value={selected.params.drift.magA}
-                    onChange={(e) => updateDrift("magA", e.target.value)}
-                  >
-                    {DRIFT_MAGS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="seg-drift-side">
-                  <select
-                    className="seg-select"
-                    value={selected.params.drift.dirB}
-                    onChange={(e) => updateDrift("dirB", e.target.value)}
-                  >
-                    {DIRECTIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                  <select
-                    className="seg-select"
-                    value={selected.params.drift.magB}
-                    onChange={(e) => updateDrift("magB", e.target.value)}
-                  >
-                    {DRIFT_MAGS.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </div>
+                    <span className="seg-chip-num">#{i + 1}</span>
+                    <span className="seg-chip-time">
+                      {fmt(seg.startTime)}–{fmt(seg.endTime)}s
+                    </span>
+                  </button>
+                ))}
               </div>
-            </div>
 
-            {/* Palette row */}
-            <div className="seg-param-row">
-              <label className="seg-param-label">palette</label>
-              <div className="seg-palette-controls">
-                <select
-                  className="seg-select"
-                  value={selected.params.palette.a}
-                  onChange={(e) => updatePalette("a", e.target.value)}
-                >
-                  {PALETTE_NAMES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-                <select
-                  className="seg-select"
-                  value={selected.params.palette.b}
-                  onChange={(e) => updatePalette("b", e.target.value)}
-                >
-                  {PALETTE_NAMES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+              {/* Header with editable times */}
+              {selected && (
+                <div className="seg-header" onMouseDown={() => setHeaderHeld(true)}>
+                  <span
+                    className={`seg-header-num${isHoveringNum ? " delete-ready" : ""}`}
+                    onMouseEnter={() => setIsHoveringNum(true)}
+                    onMouseLeave={() => setIsHoveringNum(false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSegment();
+                    }}
+                  >
+                    {isHoveringNum ? "✕" : `#${safeIdx + 1}`}
+                  </span>
+                  <div className="seg-time-inputs">
+                    <input
+                      type="number"
+                      className="seg-time-input"
+                      value={selected.startTime}
+                      step={0.1}
+                      min={0}
+                      onChange={(e) => updateTime("startTime", parseFloat(e.target.value) || 0)}
+                    />
+                    <span className="seg-time-arrow">→</span>
+                    <input
+                      type="number"
+                      className="seg-time-input"
+                      value={selected.endTime}
+                      step={0.1}
+                      min={0}
+                      onChange={(e) => updateTime("endTime", parseFloat(e.target.value) || 0)}
+                    />
+                    <span className="seg-time-unit">s</span>
+                  </div>
+                  {selected.name && (
+                    <span className="seg-header-name">{selected.name}</span>
+                  )}
+                </div>
+              )}
 
-            {/* Toggle to text */}
-            <button className="seg-mode-toggle" onClick={() => setMode("text")}>
-              switch to text
-            </button>
-          </div>
-        )}
+              {/* Content area */}
+              {mode === "text" ? (
+                <div className="seg-text-mode">
+                  <textarea
+                    className={`seq-editor full${editorError ? " seq-editor-error" : ""}`}
+                    value={sequenceText}
+                    onChange={(e) => onSequenceEdit(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <button className="seg-mode-toggle" onClick={() => setMode("sliders")}>
+                    switch to sliders
+                  </button>
+                </div>
+              ) : (
+                <div className="seg-slider-mode">
+                  {/* Column headers */}
+                  <div className="seg-col-headers">
+                    <span>START</span>
+                    <span>END</span>
+                  </div>
+
+                  {/* Numeric param rows */}
+                  {NUMERIC_PARAMS.map((def) => {
+                    const val = selected.params[def.key];
+                    return (
+                      <div className="seg-param-row" key={def.key}>
+                        <label className="seg-param-label">{def.key}</label>
+                        <div className="seg-param-values">
+                          <span className="seg-val start">{fmt(val.a)}</span>
+                          <span className="seg-val end">{fmt(val.b)}</span>
+                        </div>
+                        <div className="seg-sliders">
+                          <input
+                            type="range"
+                            className="seg-slider start"
+                            min={def.min}
+                            max={def.max}
+                            step={def.step}
+                            value={val.a}
+                            onChange={(e) =>
+                              updateNumeric(def.key, "a", parseFloat(e.target.value))
+                            }
+                          />
+                          <input
+                            type="range"
+                            className="seg-slider end"
+                            min={def.min}
+                            max={def.max}
+                            step={def.step}
+                            value={val.b}
+                            onChange={(e) =>
+                              updateNumeric(def.key, "b", parseFloat(e.target.value))
+                            }
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Drift row */}
+                  <div className="seg-param-row">
+                    <label className="seg-param-label">drift</label>
+                    <div className="seg-drift-controls">
+                      <div className="seg-drift-side">
+                        <select
+                          className="seg-select"
+                          value={selected.params.drift.dirA}
+                          onChange={(e) => updateDrift("dirA", e.target.value)}
+                        >
+                          {DIRECTIONS.map((d) => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="seg-select"
+                          value={selected.params.drift.magA}
+                          onChange={(e) => updateDrift("magA", e.target.value)}
+                        >
+                          {DRIFT_MAGS.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="seg-drift-side">
+                        <select
+                          className="seg-select"
+                          value={selected.params.drift.dirB}
+                          onChange={(e) => updateDrift("dirB", e.target.value)}
+                        >
+                          {DIRECTIONS.map((d) => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="seg-select"
+                          value={selected.params.drift.magB}
+                          onChange={(e) => updateDrift("magB", e.target.value)}
+                        >
+                          {DRIFT_MAGS.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Palette row */}
+                  <div className="seg-param-row">
+                    <label className="seg-param-label">palette</label>
+                    <div className="seg-palette-controls">
+                      <select
+                        className="seg-select"
+                        value={selected.params.palette.a}
+                        onChange={(e) => updatePalette("a", e.target.value)}
+                      >
+                        {PALETTE_NAMES.map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="seg-select"
+                        value={selected.params.palette.b}
+                        onChange={(e) => updatePalette("b", e.target.value)}
+                      >
+                        {PALETTE_NAMES.map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Toggle to text */}
+                  <button className="seg-mode-toggle" onClick={() => setMode("text")}>
+                    switch to text
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -1,0 +1,112 @@
+SONATA — Feature Inventory
+==========================
+
+FULLY IMPLEMENTED FEATURES
+--------------------------
+
+1. Particle Field Rendering
+   - Real-time GPU-accelerated particle system via Pixi.js (up to 350 particles)
+   - Visual parameters: density, connect, intensity, spread, size, turbulence, opacity
+   - Color palette interpolation between start/end palettes (cold, cool, warm, mono, ember, forest, void, rose, aurora)
+   - Directional and radial drift with configurable magnitude
+   - Persistent particle trails with blur and opacity
+   - Connection lines drawn between nearby particles (distance-based)
+   - Audio-reactive modulation: FFT data boosts intensity, size, turbulence, and connect in real-time
+
+2. Audio Playback & Timeline
+   - Load audio via drag-and-drop or file picker (MP3, WAV, OGG, M4A, AAC, FLAC)
+   - Default audio (mvt2.mp3) loads automatically
+   - Play, pause, and scrub through timeline
+   - Double-click scrub bar to reset particle field
+   - Time display (current / total) in MM:SS format
+   - Hardware media key support (Media Session API)
+
+3. Waveform Timeline
+   - Real-time waveform visualization with peaks/troughs
+   - Segment blocks overlaid with distinct colors, borders, and labels
+   - Click-to-scrub and click-to-select-segment
+   - Playhead indicator
+   - Responsive resize with cached peak computation
+
+4. Sequence Editing (Slider Mode)
+   - Per-segment sliders for all 7 parameters with separate start (a) and end (b) values
+   - Segment selector chips with color-coding
+   - Numeric inputs for segment start/end times with validation
+   - Drift direction and magnitude dropdowns
+   - Palette selection dropdowns for start and end palettes
+   - Auto-follow: editor selects the segment matching current playback time
+   - Sequential continuity enforcement across segment boundaries
+
+5. Sequence Editing (Text Mode)
+   - Full DSL textarea editor with error state highlighting
+   - Custom DSL format supporting multi-line phrase blocks and legacy single-line format
+   - Toggle between text and slider editor modes
+
+6. Draw Mode Editor
+   - Freehand curve drawing on a graph canvas to paint parameter values over time
+   - Parameter selector sidebar (7 parameters, color-coded)
+   - Graph visualization with grid lines, dot markers, and active/inactive differentiation
+   - Playhead display (vertical line + glowing orb)
+   - Joystick XY pad for drift control (angle and speed), with sidebar and floating modes
+   - Palette cycling via arrow buttons while drawing
+   - Simultaneous drift + palette recording during curve drawing
+   - Real-time particle field preview synchronized to curves
+   - Linear interpolation for smooth drawing
+
+7. Audio Analysis & Generation
+   - FFT-based spectral analysis offloaded to a Web Worker
+   - Spectral flux, bass/mid/high bands, centroid, and flatness computation
+   - Generate modal with sensitivity/drama XY pad and master attenuation slider
+   - Per-parameter min/max range sliders for generated output
+   - Hitpoint-based generation: forces segment boundaries at note times with per-note attenuation
+   - Reset button restores all generation parameters to defaults
+
+8. Timeline Notes / Markers
+   - Create notes at current time via button or spacebar double-tap
+   - Click timeline in note entry mode to place note at specific time
+   - Inline textarea editor on hover/click for note text
+   - Delete button per note
+   - Notes serialize/deserialize in exported .txt files as timestamped comments
+   - Notes persist in localStorage
+   - Hitpoint toggle per note (forces analysis boundary)
+   - Per-note attenuation multiplier (0–2x)
+
+9. Undo / Redo
+   - Cmd/Ctrl+Z to undo, Cmd/Ctrl+Shift+Z to redo
+   - Stack limit of 10 states
+   - 500ms throttle on rapid changes (e.g., slider drags)
+
+10. Demo Mode
+    - Toggle demo playback from editor
+    - Loops selected segment with scaled duration (2–5 seconds)
+    - Visual overlay with progress indicator
+
+11. File Import / Export
+    - Save: exports sequence + notes to timestamped .txt file (sonata-YYYY-MM-DD.txt)
+    - Import: file picker for .txt or .sonata files, parses embedded notes
+    - Drag-and-drop .txt/.sonata files onto canvas to import
+
+12. Persistence
+    - Sequence text auto-saved to localStorage
+    - Notes auto-saved to localStorage
+    - Auto-loads saved state on mount, falls back to built-in default sequence
+
+13. Keyboard Shortcuts
+    - Spacebar: play/pause (single press); double-press in edit mode enters note entry mode
+    - Escape: exit note entry mode
+    - Cmd/Ctrl+Z: undo
+    - Cmd/Ctrl+Shift+Z: redo
+
+14. UI / UX
+    - Overlay start screen with title branding, click to enter
+    - Edit mode toggle (show/hide segment editor panel)
+    - Draw mode toggle (enter/exit draw mode)
+    - Drag-over drop zone feedback when dragging files
+    - Control bar adapts button visibility by mode (edit, draw, demo)
+    - Status display: "sonscape" when audio loaded, "Drop MP3 for audio" otherwise
+
+
+INCOMPLETE OR STUBBED FEATURES
+------------------------------
+
+None identified. All features in the codebase appear fully wired and functional.

@@ -210,12 +210,43 @@ export class ParticleField {
       p.x += p.vx;
       p.y += p.vy;
 
-      // Wrap at edges
+      // --- Edge handling / Topological resets ---
       const margin = 50;
-      if (p.x < -margin) p.x = width + margin;
-      if (p.x > width + margin) p.x = -margin;
-      if (p.y < -margin) p.y = height + margin;
-      if (p.y > height + margin) p.y = -margin;
+      const isOutward = state.driftMode === "outward";
+      const isInward = state.driftMode === "inward";
+
+      if (isOutward) {
+        // Reset to center if it hits any edge
+        if (p.x < -margin || p.x > width + margin || p.y < -margin || p.y > height + margin) {
+          p.x = cx;
+          p.y = cy;
+          p.vx = (Math.random() - 0.5) * 0.2;
+          p.vy = (Math.random() - 0.5) * 0.2;
+        }
+      } else if (isInward) {
+        // Reset to a random edge if it reaches the center "event horizon"
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        if (dx * dx + dy * dy < 100) { // 10px radius
+          const side = Math.floor(Math.random() * 4);
+          if (side === 0) { p.x = -margin; p.y = Math.random() * height; }
+          else if (side === 1) { p.x = width + margin; p.y = Math.random() * height; }
+          else if (side === 2) { p.y = -margin; p.x = Math.random() * width; }
+          else { p.y = height + margin; p.x = Math.random() * width; }
+          p.vx = 0; p.vy = 0;
+        }
+        // Still allow edge-wrapping in case they miss the center
+        if (p.x < -margin) p.x = width + margin;
+        if (p.x > width + margin) p.x = -margin;
+        if (p.y < -margin) p.y = height + margin;
+        if (p.y > height + margin) p.y = -margin;
+      } else {
+        // Standard Directional Wrap
+        if (p.x < -margin) p.x = width + margin;
+        if (p.x > width + margin) p.x = -margin;
+        if (p.y < -margin) p.y = height + margin;
+        if (p.y > height + margin) p.y = -margin;
+      }
     }
 
     // --- Draw ---

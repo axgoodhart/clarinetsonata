@@ -269,14 +269,7 @@ export default function WaveformTimeline({
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      e.preventDefault();
       const time = getTimeFromEvent(e);
-
-      // In note entry mode, clicks place notes instead of scrubbing
-      if (noteEntryMode && onAddNoteAtTime) {
-        onAddNoteAtTime(time);
-        return;
-      }
 
       isDragging.current = true;
       onScrub(time);
@@ -291,6 +284,13 @@ export default function WaveformTimeline({
           onSelectSegment(i);
           break;
         }
+      }
+    };
+
+    const handleDoubleClick = (e: MouseEvent) => {
+      if (noteEntryMode && onAddNoteAtTime) {
+        const time = getTimeFromEvent(e);
+        onAddNoteAtTime(time);
       }
     };
 
@@ -309,11 +309,13 @@ export default function WaveformTimeline({
     };
 
     canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("dblclick", handleDoubleClick);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
       canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("dblclick", handleDoubleClick);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
       cancelAnimationFrame(rafId.current);
