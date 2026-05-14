@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { paletteColors, getPaletteNames } from "./lib/curve-data";
 
 interface DriftStep {

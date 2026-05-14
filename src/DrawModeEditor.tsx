@@ -41,6 +41,7 @@ export default function DrawModeEditor({
   const [convergence, setConvergence] = useState(3); // 1-5 scale
   const [revision, setRevision] = useState(0);
   const [glyphs, setGlyphs] = useState<{ id: string; x: number; y: number; angle: number }[]>([]);
+  const [stripHover, setStripHover] = useState<{ x: number; time: number } | null>(null);
 
   const TARGET_STEPS = 40;
   const STRIP_GAP = totalDuration / TARGET_STEPS;
@@ -111,6 +112,28 @@ export default function DrawModeEditor({
     setJoyPos({ x: 0, y: 0 });
   }, [curves, currentTime, onCurvesChanged, STRIP_GAP]);
 
+  // When drawing on the curve graph, also record current drift + palette
+  const recordDriftAndPalette = useCallback((time: number) => {
+    const jp = joyPosRef.current;
+    // Map 1-5 to engine mode (0=dir, 1=in, 2=out)
+    const mode = convergence <= 2 ? 1 : convergence >= 4 ? 2 : 0;
+    curves.setDrift(time, jp.x, jp.y, mode);
+    curves.setPalette(time, currentPalette);
+  }, [curves, currentPalette, convergence]);
+
+  // Update preview engine when curves change
+  const syncPreview = useCallback(() => {
+    previewEngineRef.current?.load(curves.toKeyframes());
+  }, [curves]);
+
+  const selectPalette = useCallback((idx: number) => {
+    setCurrentPalette(idx);
+    curves.setPalette(currentTime, idx);
+    onCurvesChanged();
+    syncPreview();
+    setRevision((r) => r + 1);
+  }, [curves, currentTime, onCurvesChanged, syncPreview]);
+
   // Sync palette with keyboard 1-9
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -125,23 +148,12 @@ export default function DrawModeEditor({
 
       const num = parseInt(e.key);
       if (num >= 1 && num <= 9) {
-        setCurrentPalette(num - 1);
-        curves.setPalette(currentTime, num - 1);
-        onCurvesChanged();
+        selectPalette(num - 1);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentTime, curves, onCurvesChanged]);
-
-  // When drawing on the curve graph, also record current drift + palette
-  const recordDriftAndPalette = useCallback((time: number) => {
-    const jp = joyPosRef.current;
-    // Map 1-5 to engine mode (0=dir, 1=in, 2=out)
-    const mode = convergence <= 2 ? 1 : convergence >= 4 ? 2 : 0;
-    curves.setDrift(time, jp.x, jp.y, mode);
-    curves.setPalette(time, currentPalette);
-  }, [curves, currentPalette, convergence]);
+  }, [selectPalette]);
 
   // Init preview field
   useEffect(() => {
@@ -153,11 +165,6 @@ export default function DrawModeEditor({
     previewEngineRef.current = engine;
     engine.load(curves.toKeyframes());
     return () => { previewFieldRef.current = null; };
-  }, [curves]);
-
-  // Update preview engine when curves change
-  const syncPreview = useCallback(() => {
-    previewEngineRef.current?.load(curves.toKeyframes());
   }, [curves]);
 
   // Preview render loop
@@ -236,6 +243,28 @@ export default function DrawModeEditor({
     lastDrawPoint.current = null;
   }, []);
 
+  const handleStripPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const computed = window.getComputedStyle(el);
+    const padL = parseFloat(computed.paddingLeft) || 0;
+    const padR = parseFloat(computed.paddingRight) || 0;
+    const scaleX = el.offsetWidth > 0 ? rect.width / el.offsetWidth : 1;
+    const localBorderBoxX = scaleX > 0 ? (e.clientX - rect.left) / scaleX : 0;
+    const localPaddingBoxX = localBorderBoxX - el.clientLeft;
+    const innerWidth = Math.max(1, el.clientWidth - padL - padR);
+    const contentX = Math.max(0, Math.min(innerWidth, localPaddingBoxX - padL));
+
+    setStripHover({
+      x: padL + contentX,
+      time: (contentX / innerWidth) * totalDuration,
+    });
+  }, [totalDuration]);
+
+  const handleStripPointerLeave = useCallback(() => {
+    setStripHover(null);
+  }, []);
+
   // Draw the graph canvas
   useFrame(() => {
     const canvas = graphCanvasRef.current;
@@ -286,7 +315,7 @@ export default function DrawModeEditor({
       const arr = curves.data[paramDef.key];
       const range = paramDef.max - paramDef.min;
 
-      ctx.strokeStyle = isActive ? paramDef.color : paramDef.color + "30";
+      ctx.strokeStyle = isActive ? paramDef.color : paramDef.color + "10";
       ctx.lineWidth = isActive ? 2.5 : 1;
       ctx.setLineDash(isActive ? [] : [3, 4]);
 
@@ -393,7 +422,7 @@ export default function DrawModeEditor({
                 <div
                   className={`palette-swatch-mini${currentPalette === i ? " active" : ""}`}
                   style={{ background: paletteColors(i)[0] }}
-                  onClick={() => setCurrentPalette(i)}
+                  onClick={() => selectPalette(i)}
                 />
                 <span className="palette-label-mini">{i + 1}</span>
               </div>
@@ -405,7 +434,7 @@ export default function DrawModeEditor({
                 <div
                   className={`palette-swatch-mini${currentPalette === i ? " active" : ""}`}
                   style={{ background: paletteColors(i)[0] }}
-                  onClick={() => setCurrentPalette(i)}
+                  onClick={() => selectPalette(i)}
                 />
                 <span className="palette-label-mini">{i + 1}</span>
               </div>
@@ -495,7 +524,11 @@ export default function DrawModeEditor({
         </div>
 
         <div className="drift-strip-center" data-rev={revision}>
-          <div className="drift-strip-bar">
+          <div
+            className={`drift-strip-bar${stripHover ? " inspecting" : ""}`}
+            onPointerMove={handleStripPointerMove}
+            onPointerLeave={handleStripPointerLeave}
+          >
             {Array.from({ length: numSteps }).map((_, i) => {
               const t = i * STRIP_GAP;
               const drift = curves.getDrift(t);
@@ -520,6 +553,38 @@ export default function DrawModeEditor({
                 </div>
               );
             })}
+            {stripHover && (
+              (() => {
+                const drift = curves.getDrift(stripHover.time);
+                const pal = curves.getPalette(stripHover.time);
+                const angle = Math.atan2(drift.y, drift.x);
+                const mag = Math.sqrt(drift.x * drift.x + drift.y * drift.y);
+                const hasData = mag > 0.01;
+                const symbol = drift.mode === 1 ? "􀅋" : drift.mode === 2 ? "􀅊" : "↑";
+                const rotation = drift.mode === 0 ? `${angle + Math.PI / 2}rad` : "0rad";
+
+                return (
+                  <div
+                    className="drift-granular-lens"
+                    style={{
+                      left: stripHover.x,
+                      borderColor: hasData ? paletteColors(pal)[1] + "aa" : "rgba(148, 163, 184, 0.32)",
+                      boxShadow: hasData ? `0 0 18px ${paletteColors(pal)[1]}66` : undefined,
+                    }}
+                  >
+                    <span
+                      className="drift-granular-lens-arrow"
+                      style={{
+                        color: hasData ? paletteColors(pal)[1] : "#334155",
+                        transform: `rotate(${rotation}) scale(${0.86 + mag * 0.42})`,
+                      }}
+                    >
+                      {symbol}
+                    </span>
+                  </div>
+                );
+              })()
+            )}
           </div>
           <div className="drift-strip-hint">
             MOVE JOYSTICK TO ADD A DRIFT POINT<br />
