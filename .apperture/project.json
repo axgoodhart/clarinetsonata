@@ -1,0 +1,21 @@
+{
+  "schema": "apperture.project/1",
+  "islandId": "6985091a-e32f-4f46-8906-45722d5d6509",
+  "accent": "#D4939F",
+  "tags": [
+    "audio-reactive",
+    "particle-system",
+    "music-visualizer",
+    "soundscape",
+    "react",
+    "pixijs",
+    "webgl",
+    "web-audio-api",
+    "typescript",
+    "web-workers",
+    "custom-dsl",
+    "fft-analysis"
+  ],
+  "stage": "Start",
+  "updatedAt": 1792377357765
+}

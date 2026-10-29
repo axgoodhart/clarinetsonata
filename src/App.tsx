@@ -11,7 +11,7 @@ type GenerateRanges,
 } from "./lib/audio-analyzer";
 import { SEQUENCE } from "./sequence";
 import { parseSegments } from "./lib/segment-utils";
-import audioSrc from "./mvt2.mp3";
+import audioSrc from "./dgs.mp3";
 import SegmentEditor from "./SegmentEditor";
 import DrawModeEditor from "./DrawModeEditor";
 import WaveformTimeline from "./WaveformTimeline";
